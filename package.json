@@ -1,0 +1,66 @@
+{
+  "name": "portfolio-2025-partage",
+  "version": "1.0.0",
+  "description": "Code commun à portfolio-2025-back et portfolio-2025-front : moteur de formules et statut d'un score.",
+  "license": "UNLICENSED",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/TimMoyence/portfolio-2025-partage.git"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    "./formule": {
+      "import": {
+        "types": "./dist/esm/formule.d.ts",
+        "default": "./dist/esm/formule.js"
+      },
+      "require": {
+        "types": "./dist/cjs/formule.d.ts",
+        "default": "./dist/cjs/formule.js"
+      }
+    },
+    "./score": {
+      "import": {
+        "types": "./dist/esm/score.d.ts",
+        "default": "./dist/esm/score.js"
+      },
+      "require": {
+        "types": "./dist/cjs/score.d.ts",
+        "default": "./dist/cjs/score.js"
+      }
+    }
+  },
+  "typesVersions": {
+    "*": {
+      "formule": [
+        "dist/cjs/formule.d.ts"
+      ],
+      "score": [
+        "dist/cjs/score.d.ts"
+      ]
+    }
+  },
+  "scripts": {
+    "build": "node scripts/construire.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "format:check": "prettier --check .",
+    "verifier:paquet": "node scripts/verifier-paquet.mjs",
+    "ci:check": "npm run typecheck && npm run format:check && npm test && npm run build && npm run verifier:paquet"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.3",
+    "fast-check": "^4.6.0",
+    "prettier": "^3.6.2",
+    "typescript": "~5.7.2",
+    "vitest": "^3.2.4"
+  }
+}
