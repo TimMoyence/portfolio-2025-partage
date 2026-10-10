@@ -581,7 +581,7 @@ function sansZeroNegatif(valeur: number): number {
   return valeur === 0 ? 0 : valeur;
 }
 
-function arrondirMoitieLoinDeZero(valeur: number, decimales: number): number {
+export function arrondirMoitieLoinDeZero(valeur: number, decimales: number): number {
   const facteur = 10 ** Math.trunc(decimales);
   const decale = Number((Math.abs(valeur) * facteur).toPrecision(PRECISION_DECIMALE));
   const arrondi = (Math.sign(valeur) * Math.round(decale)) / facteur;
