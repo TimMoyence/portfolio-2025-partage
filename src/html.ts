@@ -75,7 +75,9 @@ function texteDe(valeur: unknown): string {
 }
 
 function copieDe<T>(tableau: readonly T[]): T[] {
-  return Array.from({ length: tableau.length }, (_, rang) => tableau[rang]);
+  return Array.from({ length: tableau.length }, (_, rang) => rang)
+    .filter((rang) => rang in tableau)
+    .map((rang) => tableau[rang]);
 }
 
 type HtmlFragment = EscapedHtml | number | readonly EscapedHtml[] | UrlEchappee | FeuilleDeStyle;
