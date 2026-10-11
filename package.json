@@ -27,6 +27,16 @@
         "default": "./dist/cjs/formule.js"
       }
     },
+    "./html": {
+      "import": {
+        "types": "./dist/esm/html.d.ts",
+        "default": "./dist/esm/html.js"
+      },
+      "require": {
+        "types": "./dist/cjs/html.d.ts",
+        "default": "./dist/cjs/html.js"
+      }
+    },
     "./score": {
       "import": {
         "types": "./dist/esm/score.d.ts",
@@ -42,6 +52,9 @@
     "*": {
       "formule": [
         "dist/cjs/formule.d.ts"
+      ],
+      "html": [
+        "dist/cjs/html.d.ts"
       ],
       "score": [
         "dist/cjs/score.d.ts"
