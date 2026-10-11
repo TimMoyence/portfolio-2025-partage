@@ -176,25 +176,31 @@ const ATTRIBUTS_DES_BRIQUES: ReadonlySet<string> = new Set([
   'type',
 ]);
 
+const ATTRIBUTS_URL_DES_BRIQUES: ReadonlySet<string> = new Set(['poster']);
+
 const ATTRIBUTS_BOOLEENS: ReadonlySet<string> = new Set([
   'disabled',
   'open',
   'checked',
   'selected',
   'hidden',
+  'readonly',
 ]);
 
 interface Politique {
+  readonly attributUrl: (attribut: string) => boolean;
   readonly attributTexte: (attribut: string) => boolean;
   readonly fragmentsDansLaBalise: boolean;
 }
 
 const STRICTE: Politique = {
+  attributUrl: (attribut) => ATTRIBUTS_URL.has(attribut),
   attributTexte: (attribut) => ATTRIBUTS_TEXTE.has(attribut),
   fragmentsDansLaBalise: false,
 };
 
 const INTERACTIVE: Politique = {
+  attributUrl: (attribut) => ATTRIBUTS_URL.has(attribut) || ATTRIBUTS_URL_DES_BRIQUES.has(attribut),
   attributTexte: (attribut) =>
     ATTRIBUTS_TEXTE.has(attribut) ||
     ATTRIBUTS_DES_BRIQUES.has(attribut) ||
@@ -357,7 +363,7 @@ function verifierValeurDAttribut(
 ): void {
   const { attribut } = lecteur;
   const dans = `dans l'attribut « ${attribut} »`;
-  if (ATTRIBUTS_URL.has(attribut)) {
+  if (politique.attributUrl(attribut)) {
     const entiere = lecteur.valeurVide && suite.startsWith(lecteur.guillemet);
     if (!estEmis(valeur, 'url') || !entiere) refuser(dans);
     return;

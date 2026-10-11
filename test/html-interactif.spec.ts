@@ -53,6 +53,18 @@ describe('safeHtmlInteractif — ce que les briques du cours ajoutent à la règ
         safeHtml`<div data-testid="histogramme"${safeHtmlInteractif` data-vote="${escapeHtml('oui')}"`}></div>`,
       '<div data-testid="histogramme" data-vote="oui"></div>',
     ],
+    [
+      'un champ en lecture seule',
+      () => safeHtmlInteractif`<input ${safeHtmlInteractif`readonly`}>`,
+      () => safeHtml`<input ${safeHtmlInteractif`readonly`}>`,
+      '<input readonly>',
+    ],
+    [
+      'l’affiche d’une vidéo',
+      () => safeHtmlInteractif`<video poster="${escapeUrl('/affiche.jpg')}"></video>`,
+      () => safeHtml`<video poster="${escapeUrl('/affiche.jpg')}"></video>`,
+      '<video poster="/affiche.jpg"></video>',
+    ],
   ];
 
   it.each(ADMIS_EN_INTERACTIF)('admet %s', (_nom, interactif, _strict, attendu) => {
@@ -69,6 +81,28 @@ describe('safeHtmlInteractif — ce qu’aucune règle n’admet', () => {
     [
       'un gestionnaire injecté dans la balise par une donnée échappée',
       () => safeHtmlInteractif`<button ${escapeHtml('onclick=alert(1)')}>ok</button>`,
+    ],
+    [
+      'une donnée seulement échappée dans l’affiche d’une vidéo',
+      () => safeHtmlInteractif`<video poster="${escapeHtml(LIEN_PIEGE)}"></video>`,
+    ],
+    [
+      'une donnée seulement échappée dans un href assemblé en fragment',
+      () => safeHtmlInteractif`<a ${safeHtmlInteractif`href="${escapeHtml(LIEN_PIEGE)}"`}>x</a>`,
+    ],
+    [
+      'une donnée seulement échappée dans une affiche assemblée en fragment',
+      () =>
+        safeHtmlInteractif`<video ${safeHtmlInteractif`poster="${escapeHtml(LIEN_PIEGE)}"`}></video>`,
+    ],
+    [
+      'une URL assemblée en fragment, dont la valeur n’a été lue que comme du texte',
+      () =>
+        safeHtmlInteractif`<video playsinline ${safeHtmlInteractif`poster="${escapeUrl('/a.jpg')}"`}></video>`,
+    ],
+    [
+      'un fragment qui prolonge le nom d’un attribut',
+      () => safeHtmlInteractif`<video playsinline${DESACTIVE}></video>`,
     ],
     [
       'un style injecté dans la balise',
