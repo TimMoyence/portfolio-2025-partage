@@ -5,7 +5,14 @@ import { createRequire } from 'node:module';
 const manifeste = JSON.parse(readFileSync('package.json', 'utf8'));
 const exiger = createRequire(import.meta.url);
 const ATTENDUS = {
-  formule: ['evaluerFeuille', 'evaluerExpression', 'estUneFormule', 'surfaceDeFormule'],
+  formule: [
+    'evaluerFeuille',
+    'evaluerExpression',
+    'estUneFormule',
+    'surfaceDeFormule',
+    'lireNombreSaisi',
+    'lireNombreSaisiAvecUnite',
+  ],
   html: ['escapeHtml', 'escapeUrl', 'safeCss', 'safeHtml', 'safeHtmlInteractif'],
   score: ['statutDuScore'],
 };

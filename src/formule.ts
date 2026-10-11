@@ -225,6 +225,37 @@ function lireNombre(brut: string): number {
   return MOTIF_NOMBRE_SAISI.test(compact) ? Number(compact) : Number.NaN;
 }
 
+const ESPACES_SAISIS = /\s/g;
+const MOINS_TYPOGRAPHIQUE = /−/g;
+const UNITES_LUES = [
+  '%',
+  'k?€',
+  'euros?',
+  'pts?',
+  'points?',
+  'factures?',
+  'lignes?',
+  'passages?',
+  'kits?',
+];
+const UNITE_FINALE = new RegExp(`(?:${UNITES_LUES.join('|')})$`, 'i');
+
+function compacterLaSaisie(brut: string): string {
+  return brut.replace(ESPACES_SAISIS, '').replace(MOINS_TYPOGRAPHIQUE, '-').replaceAll(',', '.');
+}
+
+function nombreDuCompact(compact: string): number | null {
+  return MOTIF_NOMBRE_SAISI.test(compact) ? Number(compact) : null;
+}
+
+export function lireNombreSaisi(brut: string): number | null {
+  return nombreDuCompact(compacterLaSaisie(brut));
+}
+
+export function lireNombreSaisiAvecUnite(brut: string): number | null {
+  return nombreDuCompact(compacterLaSaisie(brut).replace(UNITE_FINALE, ''));
+}
+
 function texteDuJetonChaine(reste: string): string {
   let rang = GUILLEMET.length;
   while (rang < reste.length) {
