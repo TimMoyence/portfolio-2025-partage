@@ -245,7 +245,9 @@ function compacterLaSaisie(brut: string): string {
 }
 
 function nombreDuCompact(compact: string): number | null {
-  return MOTIF_NOMBRE_SAISI.test(compact) ? Number(compact) : null;
+  if (!MOTIF_NOMBRE_SAISI.test(compact)) return null;
+  const nombre = Number(compact);
+  return Number.isFinite(nombre) ? sansZeroNegatif(nombre) : null;
 }
 
 export function lireNombreSaisi(brut: string): number | null {

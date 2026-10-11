@@ -38,6 +38,8 @@ const LUS_PAR_LES_DEUX: readonly (readonly [string, number])[] = [
   ['−3,5', -3.5],
   ['+.5', 0.5],
   ['.5', 0.5],
+  ['-0', 0],
+  ['−0,0', 0],
   ['142 920', 142920],
   ['142 920,5', 142920.5],
 ];
@@ -61,6 +63,8 @@ const REFUSES_PAR_LES_DEUX: readonly string[] = [
   '%',
   '12 € 3',
   '€12',
+  '9'.repeat(309),
+  `1${'0'.repeat(400)},5`,
 ];
 
 const AVEC_UNITE: readonly (readonly [string, number])[] = [
