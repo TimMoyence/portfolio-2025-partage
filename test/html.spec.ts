@@ -445,3 +445,85 @@ describe('etancheite du type : ce que le compilateur doit refuser', () => {
     expect(rendered).toContain('<p>');
   });
 });
+
+describe('safeHtml — une URL admise ne charge ni script ni document', () => {
+  const SCRIPT_DISTANT = 'https://evil.example/x.js';
+
+  refuseChaqueInterpolation([
+    ['le src d un script', () => safeHtml`<script src="${escapeUrl(SCRIPT_DISTANT)}"></script>`],
+    [
+      'le src d un script sans schema',
+      () => safeHtml`<script src="${escapeUrl('//evil.example/x.js')}"></script>`,
+    ],
+    ['le href d une base', () => safeHtml`<base href="${escapeUrl(SCRIPT_DISTANT)}">`],
+    ['le src d une iframe', () => safeHtml`<iframe src="${escapeUrl(SCRIPT_DISTANT)}"></iframe>`],
+    ['le src d un frame', () => safeHtml`<frame src="${escapeUrl(SCRIPT_DISTANT)}">`],
+    ['le src d un embed', () => safeHtml`<embed src="${escapeUrl(SCRIPT_DISTANT)}">`],
+    [
+      'le href d un link',
+      () => safeHtml`<link rel="stylesheet" href="${escapeUrl(SCRIPT_DISTANT)}">`,
+    ],
+    [
+      'le href d un script svg',
+      () => safeHtml`<svg><script href="${escapeUrl(SCRIPT_DISTANT)}"></script></svg>`,
+    ],
+  ]);
+
+  it.each([
+    [
+      'un lien',
+      () => safeHtml`<a href="${escapeUrl('https://a.fr')}">x</a>`,
+      '<a href="https://a.fr">x</a>',
+    ],
+    [
+      'une image',
+      () => safeHtml`<img src="${escapeUrl('https://a.fr/i.png')}" alt="" />`,
+      '<img src="https://a.fr/i.png" alt="" />',
+    ],
+  ])('accepte toujours %s', (_nom, rendre, attendu) => {
+    expect(rendre()).toBe(attendu);
+  });
+});
+
+describe('safeHtml — un fragment emis ne change plus de texte', () => {
+  it('garde le texte d une URL dont on tente de remplacer toString', () => {
+    const url = escapeUrl('https://a.fr');
+
+    expect(() => Object.assign(url, { toString: () => 'javascript:alert(1)' })).toThrow(TypeError);
+    expect(safeHtml`<a href="${url}">x</a>`).toBe('<a href="https://a.fr">x</a>');
+  });
+
+  it('garde le texte d une feuille de style dont on tente de remplacer toString', () => {
+    const feuille = safeCss`a{}`;
+
+    expect(() => Object.assign(feuille, { toString: () => '</style><b>' })).toThrow(TypeError);
+  });
+});
+
+describe('safeHtml — seul un gabarit litteral transporte du HTML brut', () => {
+  const BRUT = '<img src=x onerror=alert(1)>';
+  const fauxGabarit = (): TemplateStringsArray => Object.assign([BRUT], { raw: [BRUT] });
+
+  it('refuse un faux tableau de gabarit dans safeHtml', () => {
+    expect(() => safeHtml(fauxGabarit())).toThrow(/Gabarit refusé/);
+  });
+
+  it('refuse un faux tableau de gabarit dans safeCss', () => {
+    expect(() => safeCss(fauxGabarit())).toThrow(/Gabarit refusé/);
+  });
+});
+
+describe('safeHtml — un tableau interpole coute un temps lineaire', () => {
+  it('assemble vingt mille lignes en moins d une seconde', () => {
+    const lignes = Array.from(
+      { length: 20_000 },
+      (_, rang) =>
+        safeHtml`<tr><td>${rang}</td><td>${escapeHtml('cellule de démonstration')}</td></tr>`,
+    );
+    const debut = performance.now();
+
+    safeHtml`<table>${lignes}</table>`;
+
+    expect(performance.now() - debut).toBeLessThan(1000);
+  });
+});

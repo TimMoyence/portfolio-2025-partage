@@ -29,8 +29,17 @@ const genresEmis = new WeakMap<object, Genre>();
 
 function emettre<G extends Genre>(genre: G, texte: string): FragmentEmis<G> {
   const fragment = new FragmentEmis(genre, texte);
+  Object.freeze(fragment);
   genresEmis.set(fragment, genre);
   return fragment;
+}
+
+function verifierGabarit(strings: TemplateStringsArray): void {
+  if (!Object.isFrozen(strings) || !Object.isFrozen(strings.raw)) {
+    throw new Error(
+      'Gabarit refusé : seul un gabarit littéral, dont le tableau est gelé par le moteur, peut transporter du balisage brut.',
+    );
+  }
 }
 
 function estEmis<G extends Genre>(valeur: unknown, genre: G): valeur is FragmentEmis<G> {
@@ -103,6 +112,7 @@ export function safeCss(
   strings: TemplateStringsArray,
   ...values: readonly FragmentCss[]
 ): FeuilleDeStyle {
+  verifierGabarit(strings);
   let out = strings[0];
   for (const [index, value] of values.entries()) {
     out += texteCss(value);
@@ -142,6 +152,18 @@ const ELEMENTS_BRUTS: ReadonlySet<string> = new Set([
 ]);
 
 const ATTRIBUTS_URL: ReadonlySet<string> = new Set(['href', 'src']);
+
+const ELEMENTS_A_RESSOURCE_ACTIVE: ReadonlySet<string> = new Set([
+  'script',
+  'base',
+  'iframe',
+  'frame',
+  'embed',
+  'object',
+  'link',
+  'portal',
+  'applet',
+]);
 
 const ATTRIBUTS_TEXTE: ReadonlySet<string> = new Set([
   'alt',
@@ -359,13 +381,14 @@ function verifierValeurDAttribut(
   politique: Politique,
   lecteur: LecteurDeGabarit,
   valeur: HtmlFragment,
-  suite: string,
+  suite: () => string,
 ): void {
-  const { attribut } = lecteur;
+  const { attribut, balise } = lecteur;
   const dans = `dans l'attribut « ${attribut} »`;
   if (politique.attributUrl(attribut)) {
-    const entiere = lecteur.valeurVide && suite.startsWith(lecteur.guillemet);
-    if (!estEmis(valeur, 'url') || !entiere) refuser(dans);
+    if (ELEMENTS_A_RESSOURCE_ACTIVE.has(balise)) refuser(`${dans} de <${balise}>`);
+    const entiere = () => lecteur.valeurVide && suite().startsWith(lecteur.guillemet);
+    if (!estEmis(valeur, 'url') || !entiere()) refuser(dans);
     return;
   }
   if (estEmis(valeur, 'url') || estEmis(valeur, 'style')) refuser(dans);
@@ -392,7 +415,7 @@ function verifierContexte(
   politique: Politique,
   lecteur: LecteurDeGabarit,
   valeur: HtmlFragment,
-  suite: string,
+  suite: () => string,
 ): void {
   if (typeof valeur === 'number') return;
   switch (lecteur.etat) {
@@ -427,7 +450,7 @@ function interpolerUne(
   politique: Politique,
   lecteur: LecteurDeGabarit,
   valeur: HtmlFragment,
-  suite: string,
+  suite: () => string,
 ): string {
   verifierContexte(politique, lecteur, valeur, suite);
   const texte = String(valeur);
@@ -441,10 +464,10 @@ function interpoler(
   valeur: HtmlFragment,
   suite: string,
 ): string {
-  if (!estUnTableau(valeur)) return interpolerUne(politique, lecteur, valeur, suite);
+  if (!estUnTableau(valeur)) return interpolerUne(politique, lecteur, valeur, () => suite);
   return valeur
     .map((element, rang) =>
-      interpolerUne(politique, lecteur, element, valeur.slice(rang + 1).join('') + suite),
+      interpolerUne(politique, lecteur, element, () => valeur.slice(rang + 1).join('') + suite),
     )
     .join('');
 }
@@ -454,6 +477,7 @@ function assembler(
   strings: TemplateStringsArray,
   values: readonly HtmlFragment[],
 ): EscapedHtml {
+  verifierGabarit(strings);
   const lecteur = new LecteurDeGabarit();
   let out = strings[0];
   lecteur.lire(strings[0]);
