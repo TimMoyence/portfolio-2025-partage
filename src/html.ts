@@ -20,22 +20,35 @@ class FragmentEmis<G extends Genre> {
     return this.#texte;
   }
 }
+Object.freeze(FragmentEmis.prototype);
 
 export type UrlEchappee = FragmentEmis<'url'>;
 
 export type FeuilleDeStyle = FragmentEmis<'style'>;
 
-const genresEmis = new WeakMap<object, Genre>();
+const fragmentsEmis = new WeakMap<object, { readonly genre: Genre; readonly texte: string }>();
 
 function emettre<G extends Genre>(genre: G, texte: string): FragmentEmis<G> {
   const fragment = new FragmentEmis(genre, texte);
   Object.freeze(fragment);
-  genresEmis.set(fragment, genre);
+  fragmentsEmis.set(fragment, { genre, texte });
   return fragment;
 }
 
+function estUnGabaritLitteral(strings: TemplateStringsArray): boolean {
+  const raw = Object.getOwnPropertyDescriptor(strings, 'raw');
+  return (
+    Object.isFrozen(strings) &&
+    raw !== undefined &&
+    !raw.enumerable &&
+    Array.isArray(raw.value) &&
+    Object.isFrozen(raw.value) &&
+    raw.value.length === strings.length
+  );
+}
+
 function verifierGabarit(strings: TemplateStringsArray): void {
-  if (!Object.isFrozen(strings) || !Object.isFrozen(strings.raw)) {
+  if (!estUnGabaritLitteral(strings)) {
     throw new Error(
       'Gabarit refusé : seul un gabarit littéral, dont le tableau est gelé par le moteur, peut transporter du balisage brut.',
     );
@@ -43,7 +56,15 @@ function verifierGabarit(strings: TemplateStringsArray): void {
 }
 
 function estEmis<G extends Genre>(valeur: unknown, genre: G): valeur is FragmentEmis<G> {
-  return typeof valeur === 'object' && valeur !== null && genresEmis.get(valeur) === genre;
+  return (
+    typeof valeur === 'object' && valeur !== null && fragmentsEmis.get(valeur)?.genre === genre
+  );
+}
+
+function texteDe(valeur: unknown): string {
+  const emis =
+    typeof valeur === 'object' && valeur !== null ? fragmentsEmis.get(valeur) : undefined;
+  return emis === undefined ? String(valeur) : emis.texte;
 }
 
 type HtmlFragment = EscapedHtml | number | readonly EscapedHtml[] | UrlEchappee | FeuilleDeStyle;
@@ -104,7 +125,7 @@ function texteCss(valeur: FragmentCss): string {
     return valeur;
   }
   if (Array.isArray(valeur)) return valeur.map(texteCss).join('');
-  if (estEmis(valeur, 'style')) return valeur.toString();
+  if (estEmis(valeur, 'style')) return texteDe(valeur);
   throw new Error('Jeton CSS refusé : fragment de style contrefait.');
 }
 
@@ -453,7 +474,7 @@ function interpolerUne(
   suite: () => string,
 ): string {
   verifierContexte(politique, lecteur, valeur, suite);
-  const texte = String(valeur);
+  const texte = texteDe(valeur);
   lecteur.lireInterpolation(texte);
   return texte;
 }

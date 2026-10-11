@@ -498,6 +498,31 @@ describe('safeHtml — un fragment emis ne change plus de texte', () => {
 
     expect(() => Object.assign(feuille, { toString: () => '</style><b>' })).toThrow(TypeError);
   });
+
+  it('garde le texte d une URL dont on tente de modifier le prototype', () => {
+    const url = escapeUrl('https://a.fr');
+    const prototype = Object.getPrototypeOf(url) as { toString: () => string };
+
+    expect(() => {
+      prototype.toString = () => 'javascript:alert(1)';
+    }).toThrow(TypeError);
+    expect(safeHtml`<a href="${url}">x</a>`).toBe('<a href="https://a.fr">x</a>');
+  });
+
+  it('ignore une conversion en primitive ajoutee a Object.prototype', () => {
+    const url = escapeUrl('https://a.fr');
+    const feuille = safeCss`a{}`;
+    Object.defineProperty(Object.prototype, Symbol.toPrimitive, {
+      value: () => 'javascript:alert(2)',
+      configurable: true,
+    });
+    try {
+      expect(safeHtml`<a href="${url}">x</a>`).toBe('<a href="https://a.fr">x</a>');
+      expect(safeHtml`<style>${feuille}</style>`).toBe('<style>a{}</style>');
+    } finally {
+      Reflect.deleteProperty(Object.prototype, Symbol.toPrimitive);
+    }
+  });
 });
 
 describe('safeHtml — seul un gabarit litteral transporte du HTML brut', () => {
@@ -510,6 +535,21 @@ describe('safeHtml — seul un gabarit litteral transporte du HTML brut', () => 
 
   it('refuse un faux tableau de gabarit dans safeCss', () => {
     expect(() => safeCss(fauxGabarit())).toThrow(/Gabarit refusé/);
+  });
+
+  it('refuse un faux tableau de gabarit gele', () => {
+    const faux: TemplateStringsArray = Object.freeze(
+      Object.assign([BRUT], { raw: Object.freeze([BRUT]) }),
+    );
+
+    expect(() => safeHtml(faux)).toThrow(/Gabarit refusé/);
+    expect(() => safeCss(faux)).toThrow(/Gabarit refusé/);
+  });
+
+  it('refuse un tableau gele sans raw', () => {
+    const faux = Object.freeze([BRUT]) as unknown as TemplateStringsArray;
+
+    expect(() => safeHtml(faux)).toThrow(/Gabarit refusé/);
   });
 });
 
