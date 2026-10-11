@@ -464,34 +464,44 @@ describe('etancheite du type : ce que le compilateur doit refuser', () => {
 describe('etancheite a l execution : ce que le compilateur laisse passer', () => {
   const ARBITRAIRE = '<img src=x onerror=alert(1)>';
 
-  it('ignore la map et la slice propres d un tableau interpole', () => {
-    const pieger = (elements: unknown[], substitut: string) =>
-      Object.assign(elements, {
-        map: () => [substitut],
-        slice: () => [substitut],
-      }) as unknown as EscapedHtml[];
-    const liens = pieger([escapeUrl('https://ok.example')], 'javascript:alert(1)');
-    const feuilles = pieger([safeCss`b{}`], '</style><script>alert(1)</script>');
-    const lignes = pieger([escapeHtml('a')], ARBITRAIRE);
+  const pieger = <T>(elements: unknown[], substitut: string): T[] => {
+    function leurre() {
+      return Object.assign([substitut], { map: () => [substitut] });
+    }
+    const methodes = Object.getOwnPropertyNames(Array.prototype).filter(
+      (nom) => nom !== 'length' && nom !== 'constructor',
+    );
+    return Object.assign(elements, Object.fromEntries(methodes.map((nom) => [nom, leurre])), {
+      [Symbol.iterator]: () => [substitut][Symbol.iterator](),
+      constructor: { [Symbol.species]: leurre },
+    }) as unknown as T[];
+  };
+
+  it('ignore les methodes propres d un tableau interpole', () => {
+    const liens = pieger<EscapedHtml>([escapeUrl('https://ok.example')], 'javascript:alert(1)');
+    const feuilles = pieger<EscapedHtml>([safeCss`b{}`], '</style><script>alert(1)</script>');
+    const lignes = pieger<EscapedHtml>([escapeHtml('a')], ARBITRAIRE);
 
     expect(safeHtml`<a href="${liens}">x</a>`).toBe('<a href="https://ok.example">x</a>');
     expect(safeHtml`<style>${feuilles}</style>`).toBe('<style>b{}</style>');
     expect(safeHtml`<p>${lignes}</p>`).toBe('<p>a</p>');
   });
 
-  it('refuse un tableau vide dans un href, qui laisserait un lien actif', () => {
+  it('refuse un tableau vide ou creux dans un href, qui laisserait un lien actif', () => {
     const aucune: EscapedHtml[] = [];
+    const trous = new Array<EscapedHtml>(2);
 
     expect(() => safeHtml`<a href="${aucune}">x</a>`).toThrow(/Interpolation refusée/);
+    expect(() => safeHtml`<a href="${trous}">x</a>`).toThrow(/Interpolation refusée/);
   });
 
-  it('ignore la map propre d un tableau de feuilles de style', () => {
-    const vides: FeuilleDeStyle[] = [];
-    const piege = Object.assign(vides, {
-      map: () => ['body{background:url(https://evil.example)}'],
-    });
+  it('ignore les methodes propres d un tableau de feuilles de style', () => {
+    const piege = pieger<FeuilleDeStyle>(
+      [safeCss`b{}`],
+      'body{background:url(https://evil.example)}',
+    );
 
-    expect(safeCss`a{}${piege}`.toString()).toBe('a{}');
+    expect(safeCss`a{}${piege}`.toString()).toBe('a{}b{}');
   });
 
   it('refuse un objet type comme une URL emise sans l avoir ete', () => {
