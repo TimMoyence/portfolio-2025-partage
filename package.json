@@ -17,6 +17,16 @@
     "dist"
   ],
   "exports": {
+    "./contrats": {
+      "import": {
+        "types": "./dist/esm/contrats.d.ts",
+        "default": "./dist/esm/contrats.js"
+      },
+      "require": {
+        "types": "./dist/cjs/contrats.d.ts",
+        "default": "./dist/cjs/contrats.js"
+      }
+    },
     "./formule": {
       "import": {
         "types": "./dist/esm/formule.d.ts",
@@ -50,6 +60,9 @@
   },
   "typesVersions": {
     "*": {
+      "contrats": [
+        "dist/cjs/contrats.d.ts"
+      ],
       "formule": [
         "dist/cjs/formule.d.ts"
       ],
