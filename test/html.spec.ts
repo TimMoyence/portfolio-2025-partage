@@ -466,7 +466,9 @@ describe('etancheite a l execution : ce que le compilateur laisse passer', () =>
 
   const pieger = <T>(elements: unknown[], substitut: string): T[] => {
     function leurre() {
-      return Object.assign([substitut], { map: () => [substitut] });
+      return new Proxy(Object.assign([substitut], { map: () => [substitut] }), {
+        defineProperty: () => true,
+      });
     }
     const methodes = Object.getOwnPropertyNames(Array.prototype).filter(
       (nom) => nom !== 'length' && nom !== 'constructor',
