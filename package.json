@@ -1,7 +1,7 @@
 {
   "name": "portfolio-2025-partage",
-  "version": "1.0.0",
-  "description": "Code commun à portfolio-2025-back et portfolio-2025-front : moteur de formules et statut d'un score.",
+  "version": "1.1.0",
+  "description": "Code commun à portfolio-2025-back et portfolio-2025-front : contrats de l'API des formations, moteur de formules, lecture d'un nombre saisi, échappement HTML et statut d'un score.",
   "license": "UNLICENSED",
   "private": true,
   "type": "module",
