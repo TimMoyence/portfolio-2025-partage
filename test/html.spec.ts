@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { escapeHtml, escapeUrl, safeCss, safeHtml } from '../src/html';
+import {
+  escapeHtml,
+  escapeUrl,
+  safeCss,
+  safeHtml,
+  type EscapedHtml,
+  type FeuilleDeStyle,
+} from '../src/html';
 
 const refuseChaqueInterpolation = (cas: readonly (readonly [string, () => unknown])[]): void => {
   it.each(cas)('refuse une interpolation dans %s', (_nom, rendre) => {
@@ -436,13 +443,60 @@ describe('etancheite du type : ce que le compilateur doit refuser', () => {
     expect(rendered).toContain('<script>');
   });
 
-  it('refuse une valeur arbitraire non marquee', () => {
+  it('refuse une valeur arbitraire non marquee, a la compilation comme au rendu', () => {
     const value = { toString: () => '<img onerror=alert(1) />' };
 
     // @ts-expect-error seuls EscapedHtml, number et EscapedHtml[] sont admis.
-    const rendered: string = safeHtml`<p>${value}</p>`;
+    expect(() => safeHtml`<p>${value}</p>`).toThrow(/Interpolation refusée/);
+  });
+});
 
-    expect(rendered).toContain('<p>');
+describe('etancheite a l execution : ce que le compilateur laisse passer', () => {
+  const ARBITRAIRE = '<img src=x onerror=alert(1)>';
+
+  it('ignore la map propre d un tableau interpole', () => {
+    const vides: EscapedHtml[] = [];
+    const piege = Object.assign(vides, { map: () => ['javascript:alert(1)'] });
+
+    expect(() => safeHtml`<a href="${piege}">x</a>`).toThrow(/Interpolation refusée/);
+    expect(safeHtml`<p>${piege}</p>`).toBe('<p></p>');
+  });
+
+  it('refuse un tableau vide dans un href, qui laisserait un lien actif', () => {
+    const aucune: EscapedHtml[] = [];
+
+    expect(() => safeHtml`<a href="${aucune}">x</a>`).toThrow(/Interpolation refusée/);
+  });
+
+  it('ignore la map propre d un tableau de feuilles de style', () => {
+    const vides: FeuilleDeStyle[] = [];
+    const piege = Object.assign(vides, {
+      map: () => ['body{background:url(https://evil.example)}'],
+    });
+
+    expect(safeCss`a{}${piege}`.toString()).toBe('a{}');
+  });
+
+  it('refuse un objet type comme une URL emise sans l avoir ete', () => {
+    const contrefait = Object.assign({ toString: () => ARBITRAIRE }, escapeUrl('#'));
+
+    expect(() => safeHtml`<p>${contrefait}</p>`).toThrow(/Interpolation refusée/);
+  });
+
+  it('refuse une fonction typee comme une URL emise', () => {
+    const contrefaite = Object.assign(
+      Object.assign(() => 0, { toString: () => ARBITRAIRE }),
+      escapeUrl('#'),
+    );
+
+    expect(() => safeHtml`<p>${contrefaite}</p>`).toThrow(/Interpolation refusée/);
+  });
+
+  it('refuse un element de tableau qui n est pas un fragment', () => {
+    const contrefait = Object.assign({ toString: () => ARBITRAIRE }, escapeUrl('#'));
+    const lignes = [contrefait] as unknown as EscapedHtml[];
+
+    expect(() => safeHtml`<ul>${lignes}</ul>`).toThrow(/Interpolation refusée/);
   });
 });
 

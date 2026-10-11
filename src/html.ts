@@ -62,9 +62,20 @@ function estEmis<G extends Genre>(valeur: unknown, genre: G): valeur is Fragment
 }
 
 function texteDe(valeur: unknown): string {
-  const emis =
-    typeof valeur === 'object' && valeur !== null ? fragmentsEmis.get(valeur) : undefined;
-  return emis === undefined ? String(valeur) : emis.texte;
+  if ((typeof valeur !== 'object' || valeur === null) && typeof valeur !== 'function') {
+    return String(valeur);
+  }
+  const emis = fragmentsEmis.get(valeur);
+  if (emis === undefined) {
+    throw new Error(
+      'Interpolation refusée : cet objet n’a été émis ni par escapeUrl ni par safeCss, son texte ne dit rien de son contexte.',
+    );
+  }
+  return emis.texte;
+}
+
+function copieDe<T>(tableau: readonly T[]): T[] {
+  return Array.from({ length: tableau.length }, (_, rang) => tableau[rang]);
 }
 
 type HtmlFragment = EscapedHtml | number | readonly EscapedHtml[] | UrlEchappee | FeuilleDeStyle;
@@ -124,7 +135,7 @@ function texteCss(valeur: FragmentCss): string {
     }
     return valeur;
   }
-  if (Array.isArray(valeur)) return valeur.map(texteCss).join('');
+  if (Array.isArray(valeur)) return copieDe(valeur).map(texteCss).join('');
   if (estEmis(valeur, 'style')) return texteDe(valeur);
   throw new Error('Jeton CSS refusé : fragment de style contrefait.');
 }
@@ -414,7 +425,7 @@ function verifierValeurDAttribut(
   }
   if (estEmis(valeur, 'url') || estEmis(valeur, 'style')) refuser(dans);
   if (politique.attributTexte(attribut)) return;
-  if (ATTRIBUTS_COULEUR.has(attribut) && JETON_CSS.test(String(valeur))) {
+  if (ATTRIBUTS_COULEUR.has(attribut) && JETON_CSS.test(texteDe(valeur))) {
     return;
   }
   refuser(dans);
@@ -422,7 +433,7 @@ function verifierValeurDAttribut(
 
 function attributsDuFragmentAdmis(politique: Politique, valeur: HtmlFragment): boolean {
   if (estEmis(valeur, 'url') || estEmis(valeur, 'style')) return false;
-  for (const [morceau, nom] of String(valeur).matchAll(MORCEAU_DE_BALISE)) {
+  for (const [morceau, nom] of texteDe(valeur).matchAll(MORCEAU_DE_BALISE)) {
     const admis =
       nom === undefined
         ? BLANC.test(morceau)
@@ -486,9 +497,20 @@ function interpoler(
   suite: string,
 ): string {
   if (!estUnTableau(valeur)) return interpolerUne(politique, lecteur, valeur, () => suite);
-  return valeur
+  const elements = copieDe(valeur);
+  if (elements.length === 0) return interpolerUne(politique, lecteur, escapeHtml(''), () => suite);
+  return elements
     .map((element, rang) =>
-      interpolerUne(politique, lecteur, element, () => valeur.slice(rang + 1).join('') + suite),
+      interpolerUne(
+        politique,
+        lecteur,
+        element,
+        () =>
+          elements
+            .slice(rang + 1)
+            .map(texteDe)
+            .join('') + suite,
+      ),
     )
     .join('');
 }
