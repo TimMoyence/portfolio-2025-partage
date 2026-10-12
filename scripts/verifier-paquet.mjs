@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
@@ -8,7 +9,75 @@ import ts from 'typescript';
 const manifeste = JSON.parse(readFileSync('package.json', 'utf8'));
 const exiger = createRequire(import.meta.url);
 const ATTENDUS = {
+  api: {
+    listes: [
+      'LOCALES_SUPPORTEES',
+      'PILLAR_KEYS',
+      'AUDIT_PROCESSING_STATUSES',
+      'AI_LEVELS',
+      'BUDGET_TIERS',
+      'COOKIE_CONSENT_SOURCES',
+      'COOKIE_CONSENT_ACTIONS',
+    ],
+    types: [
+      'SupportedLocale',
+      'ChampsAntiRobot',
+      'ReponseDeCreation',
+      'PillarKey',
+      'AuditProcessingStatus',
+      'AuditContactMethod',
+      'AuditRequestPayload',
+      'AuditCreateResponse',
+      'AuditSynthesis',
+      'AuditSummaryResponse',
+      'ReportSeverity',
+      'ClientReportFinding',
+      'ClientReportEngineScore',
+      'ClientReportPillar',
+      'ClientReportQuickWin',
+      'ClientReportCta',
+      'ClientReport',
+      'AuditProgressEvent',
+      'AuditCompletedEvent',
+      'AuditFailedEvent',
+      'AuditTimeoutEvent',
+      'AuditStreamEvent',
+      'AiLevel',
+      'BudgetTier',
+      'InteractionProfile',
+      'ToolkitRequest',
+      'ToolkitResponse',
+      'CheatsheetEntry',
+      'PromptEntry',
+      'WorkflowStep',
+      'WorkflowEntry',
+      'TemplateEntry',
+      'ToolkitPage',
+      'ContactRequest',
+      'CookieConsentSource',
+      'CookieConsentAction',
+      'CookieConsentPreferences',
+      'CookieConsentPayload',
+      'PollInteraction',
+      'ReflectionInteraction',
+      'SlideInteractions',
+      'PresentationInteractions',
+      'AuthUser',
+      'AuthSession',
+      'AuthActionMessage',
+      'LoginCredentials',
+      'GoogleAuthPayload',
+      'RegisterUserPayload',
+      'ForgotPasswordPayload',
+      'ResendVerificationPayload',
+      'ResetPasswordPayload',
+      'SetPasswordPayload',
+      'ChangePasswordPayload',
+      'UpdateProfilePayload',
+    ],
+  },
   contrats: {
+    fonctions: ['surLaJumelle'],
     listes: [
       'TYPES_QUESTION',
       'DIFFUSIONS',
@@ -17,6 +86,9 @@ const ATTENDUS = {
       'PACING_MODES',
       'MODALITES',
       'REGIMES_DE_VERROU',
+      'CHAMPS_EXTRAITS_DU_CAS',
+      'STATUTS_DE_SEANCE',
+      'STATUTS_DE_REPONSE_LIBRE',
     ],
     types: [
       'TypeQuestion',
@@ -42,22 +114,189 @@ const ATTENDUS = {
       'ResumeBareme',
       'ResultatsEnDirect',
       'RegleDeNotation',
+      'ContenuDeBrique',
+      'ContenuPublie',
+      'OptionPublique',
+      'VotePublic',
+      'RecallQuestionPublique',
+      'NumeriquePublic',
+      'ExitBilletPublic',
+      'QuoteCitation',
+      'QuestionLibre',
+      'CasProfessionnel',
+      'ProCas',
+      'LigneDuDossier',
+      'WorkedEtape',
+      'WorkedExemple',
+      'ParametreCurseur',
+      'Reglages',
+      'Prereglage',
+      'DefinitionReglable',
+      'EtapeDeMachine',
+      'Concept4Definition',
+      'TraitSerie',
+      'PlotAxe',
+      'PlotBornesOrdonnee',
+      'PlotSerie',
+      'PlotDefinition',
+      'StoryVisuel',
+      'StoryVideo',
+      'PresentationDuRecit',
+      'StoryRecit',
+      'ChallengeProblemePublic',
+      'PlanEtaye',
+      'SheetPlanPublic',
+      'CardsortPlanPublic',
+      'RoleColonne',
+      'TableColonneServie',
+      'TableSynthese',
+      'TableBuildPlanPublic',
+      'EscapeEnigmePublique',
+      'EscapeParcoursPublic',
+      'PulseSondage',
+      'SpacedRappel',
+      'BoiteDeRevision',
+      'SpacedQuestionPublique',
+      'OrdreQuestions',
+      'QuestionDeQuestionnaire',
+      'DonneesParBrique',
+      'ChampExtraitDuCas',
+      'CadrageDuRenvoi',
+      'ExplicationDeCorrection',
+      'PieceJointePublique',
+      'PieceJointeServieEnSeance',
+      'PieceJointeServie',
+      'GuideFormateur',
+      'CorrigePresentateur',
+      'CorrigeEcranPresentateur',
+      'QuestionCorrigee',
+      'ReflexionServie',
+      'CorrectionServie',
+      'EcranPublic',
+      'CoursPublic',
+      'CoursPublicCatalogue',
+      'QuestionDuDeroule',
+      'EcranDeroule',
+      'DerouleCours',
+      'LivretPublie',
+      'StatutDeSeance',
+      'PilotageEcran',
+      'PilotageDemande',
+      'CommandePilotage',
+      'EtatSession',
+      'SeanceOuverte',
+      'InscriptionParticipant',
+      'Rattachement',
+      'ParticipantDeSeance',
+      'ValeurSaisie',
+      'ValeurReponse',
+      'ReponseEtudiant',
+      'ProductionEtudiante',
+      'TentativeEnigme',
+      'TentativeDefi',
+      'ReponseLibreEtudiant',
+      'ReponseLibreEnregistree',
+      'IncidentEtudiant',
+      'DetailDeVerdict',
+      'VerdictDeReponseServi',
+      'VerdictDeProductionServi',
+      'VerdictDeTentativeServi',
+      'StrategieServie',
+      'StrategiesDuDefi',
+      'RappelsDus',
+      'QuestionDue',
+      'QuestionsDues',
+      'SyntheseConcept',
+      'EnigmeResolue',
+      'ProgressionDesEnigmes',
+      'ReponseDuParticipant',
+      'EtatParticipant',
+      'StatutDeReponseLibre',
+      'ReponseLibreFormateur',
+      'AnnotationFormateur',
+      'ReponseRapportee',
+      'ReponseLibreRapportee',
+      'ParticipantRapporte',
+      'RapportSeance',
     ],
   },
   formule: {
     fonctions: [
-      'evaluerFeuille',
-      'evaluerExpression',
-      'estUneFormule',
-      'surfaceDeFormule',
+      'lettreColonne',
+      'nomCellule',
       'lireNombreSaisi',
       'lireNombreSaisiAvecUnite',
+      'estUneFormule',
+      'arrondirMoitieLoinDeZero',
+      'evaluerFeuille',
+      'evaluerCellule',
+      'evaluerExpression',
+      'surfaceDeFormule',
+      'formeR1C1',
+      'decalerFormule',
+      'formaterResultat',
+      'remplirGabarit',
+    ],
+    constantes: ['LONGUEUR_MAX_FORMULE', 'PROFONDEUR_MAX', 'NOMBRE_MAX_CELLULES'],
+    erreurs: ['FeuilleHorsLimitesError'],
+    types: [
+      'CodeErreur',
+      'ValeurFormule',
+      'ResultatFormule',
+      'ResultatNumerique',
+      'Feuille',
+      'OptionsEvaluation',
+      'SurfaceFormule',
     ],
   },
   html: {
-    fonctions: ['escapeHtml', 'escapeUrl', 'safeCss', 'safeHtml', 'safeHtmlInteractif'],
+    fonctions: [
+      'escapeHtml',
+      'estUrlAutorisee',
+      'escapeUrl',
+      'safeCss',
+      'safeHtml',
+      'safeHtmlInteractif',
+    ],
+    types: ['EscapedHtml', 'UrlEchappee', 'FeuilleDeStyle'],
   },
-  score: { fonctions: ['statutDuScore'] },
+  score: {
+    fonctions: ['statutDuScore'],
+    objets: ['LIBELLES_DU_STATUT'],
+    types: ['StatutScore'],
+  },
+  valeurs: {
+    fonctions: [
+      'estObjet',
+      'objetOuNull',
+      'estMembre',
+      'estEntierPositif',
+      'borner',
+      'messageDErreur',
+      'echapperPourRegex',
+      'sansFin',
+      'sansDebut',
+      'sansBords',
+      'cueillirDansArbre',
+      'cueillirSous',
+    ],
+    types: ['Retenir'],
+  },
+};
+const OUTILS = {
+  'outils/dossier-temporaire': [
+    'avecDossierPlante',
+    'planterDossier',
+    'ecrireFichiers',
+    'supprimerDossier',
+  ],
+  'outils/porte-de-duplication': [
+    'verdictSurDepotPlante',
+    'scenariosDeLaPorte',
+    'ecartsDesConfigurations',
+    'ecartsDuBranchement',
+  ],
+  'outils/workflow-github': ['blocsDesJobs', 'etapesDuJob'],
 };
 
 const RESOLUTIONS = {
@@ -66,39 +305,93 @@ const RESOLUTIONS = {
   bundler: { module: ts.ModuleKind.ESNext, moduleResolution: ts.ModuleResolutionKind.Bundler },
 };
 
+const nomsAttendus = ({
+  fonctions = [],
+  listes = [],
+  objets = [],
+  constantes = [],
+  erreurs = [],
+  types = [],
+}) => [...fonctions, ...listes, ...objets, ...constantes, ...erreurs, ...types];
+
 assert.deepEqual(
   Object.keys(manifeste.exports).sort(),
-  Object.keys(ATTENDUS)
-    .map((entree) => `./${entree}`)
-    .sort(),
+  [...Object.keys(ATTENDUS), ...Object.keys(OUTILS)].map((entree) => `./${entree}`).sort(),
   'chaque entrée du paquet doit être vérifiée ici',
 );
 
-for (const [entree, { fonctions = [], listes = [] }] of Object.entries(ATTENDUS)) {
+for (const [entree, attendus] of Object.entries(ATTENDUS)) {
+  const { fonctions = [], listes = [], objets = [], constantes = [], erreurs = [] } = attendus;
   const specificateur = `${manifeste.name}/${entree}`;
   const chargements = { import: await import(specificateur), require: exiger(specificateur) };
   for (const [condition, module] of Object.entries(chargements)) {
+    const ici = `${specificateur} (${condition})`;
     for (const fonction of fonctions) {
-      assert.equal(
-        typeof module[fonction],
-        'function',
-        `${specificateur} (${condition}) : ${fonction}`,
-      );
+      assert.equal(typeof module[fonction], 'function', `${ici} : ${fonction}`);
     }
     for (const liste of listes) {
       assert.ok(
         Array.isArray(module[liste]) && Object.isFrozen(module[liste]),
-        `${specificateur} (${condition}) : ${liste} doit être une liste gelée`,
+        `${ici} : ${liste} doit être une liste gelée`,
+      );
+    }
+    for (const objet of objets) {
+      assert.ok(
+        typeof module[objet] === 'object' &&
+          !Array.isArray(module[objet]) &&
+          Object.isFrozen(module[objet]),
+        `${ici} : ${objet} doit être un objet gelé`,
+      );
+    }
+    for (const constante of constantes) {
+      assert.equal(typeof module[constante], 'number', `${ici} : ${constante}`);
+    }
+    for (const erreur of erreurs) {
+      assert.ok(
+        typeof module[erreur] === 'function' && module[erreur].prototype instanceof Error,
+        `${ici} : ${erreur} doit être une classe d erreur`,
       );
     }
   }
 }
 
+for (const [entree, fonctions] of Object.entries(OUTILS)) {
+  const specificateur = `${manifeste.name}/${entree}`;
+  const module = await import(specificateur);
+  for (const fonction of fonctions) {
+    assert.equal(typeof module[fonction], 'function', `${specificateur} : ${fonction}`);
+  }
+}
+
+function exportsDeclares(fichier) {
+  const programme = ts.createProgram([fichier], {
+    ...RESOLUTIONS.nodenext,
+    noEmit: true,
+    types: [],
+  });
+  const verificateur = programme.getTypeChecker();
+  const source = programme.getSourceFile(fichier);
+  const module = source && verificateur.getSymbolAtLocation(source);
+  assert.ok(module, `${fichier} : déclarations introuvables`);
+  return verificateur
+    .getExportsOfModule(module)
+    .map((symbole) => symbole.name)
+    .sort();
+}
+
+for (const [entree, attendus] of Object.entries(ATTENDUS)) {
+  assert.deepEqual(
+    exportsDeclares(`dist/esm/${entree}.d.ts`),
+    nomsAttendus(attendus).sort(),
+    `${entree} : chaque export déclaré doit figurer dans ATTENDUS, et lui seul`,
+  );
+}
+
 function sonder(dossier) {
   const sonde = join(dossier, 'sonde.ts');
   const reexportations = Object.entries(ATTENDUS).map(
-    ([entree, { fonctions = [], listes = [], types = [] }]) =>
-      `export type { ${[...fonctions, ...listes, ...types].join(', ')} } from '${manifeste.name}/${entree}';`,
+    ([entree, attendus]) =>
+      `export type { ${nomsAttendus(attendus).join(', ')} } from '${manifeste.name}/${entree}';`,
   );
   writeFileSync(sonde, `${reexportations.join('\n')}\n`);
   const hote = {
@@ -133,6 +426,32 @@ try {
   rmSync(dossier, { recursive: true, force: true });
 }
 
+const [archive] = JSON.parse(
+  execFileSync('npm', ['pack', '--dry-run', '--json', '--ignore-scripts'], { encoding: 'utf8' }),
+);
+const livres = new Set(archive.files.map((fichier) => fichier.path));
+const cibles = [
+  ...Object.values(manifeste.bin),
+  ...Object.values(manifeste.exports).flatMap((cible) =>
+    JSON.stringify(cible)
+      .match(/\.\/[^"]+/g)
+      .map((chemin) => chemin.slice(2)),
+  ),
+];
+for (const cible of cibles) {
+  assert.ok(livres.has(cible), `l archive doit livrer ${cible}`);
+}
+for (const bin of Object.values(manifeste.bin)) {
+  assert.ok(
+    readFileSync(bin, 'utf8').startsWith('#!/usr/bin/env node\n'),
+    `${bin} doit s exécuter par node`,
+  );
+}
+assert.ok(
+  [...livres].every((chemin) => !chemin.startsWith('test/') && !chemin.startsWith('src/')),
+  'l archive ne livre ni les tests ni les sources',
+);
+
 console.log(
-  `${manifeste.name} : entrées ESM et CJS résolues par leur nom de paquet, déclarations lues en ${Object.keys(RESOLUTIONS).join(', ')}`,
+  `${manifeste.name} : entrées ESM et CJS résolues par leur nom de paquet, outils ESM chargés, exports déclarés égaux à ATTENDUS, déclarations lues en ${Object.keys(RESOLUTIONS).join(', ')}, archive de ${livres.size} fichiers livrant bin et entrées`,
 );

@@ -1,7 +1,7 @@
 {
   "name": "portfolio-2025-partage",
-  "version": "1.1.0",
-  "description": "Code commun à portfolio-2025-back et portfolio-2025-front : contrats de l'API des formations, moteur de formules, lecture d'un nombre saisi, échappement HTML et statut d'un score.",
+  "version": "1.2.0",
+  "description": "Code commun à portfolio-2025-back et portfolio-2025-front : contrats de l'API des formations, modèles de l'API, moteur de formules, lecture d'un nombre saisi, échappement HTML, statut d'un score, gardes de valeurs, garde des commentaires et outils de test des portes.",
   "license": "UNLICENSED",
   "private": true,
   "type": "module",
@@ -14,9 +14,23 @@
     "node": ">=20"
   },
   "files": [
-    "dist"
+    "dist",
+    "outils"
   ],
+  "bin": {
+    "garde-commentaires": "outils/garde-commentaires/cli.mjs"
+  },
   "exports": {
+    "./api": {
+      "import": {
+        "types": "./dist/esm/api.d.ts",
+        "default": "./dist/esm/api.js"
+      },
+      "require": {
+        "types": "./dist/cjs/api.d.ts",
+        "default": "./dist/cjs/api.js"
+      }
+    },
     "./contrats": {
       "import": {
         "types": "./dist/esm/contrats.d.ts",
@@ -56,10 +70,32 @@
         "types": "./dist/cjs/score.d.ts",
         "default": "./dist/cjs/score.js"
       }
+    },
+    "./valeurs": {
+      "import": {
+        "types": "./dist/esm/valeurs.d.ts",
+        "default": "./dist/esm/valeurs.js"
+      },
+      "require": {
+        "types": "./dist/cjs/valeurs.d.ts",
+        "default": "./dist/cjs/valeurs.js"
+      }
+    },
+    "./outils/dossier-temporaire": {
+      "import": "./outils/dossier-temporaire.mjs"
+    },
+    "./outils/porte-de-duplication": {
+      "import": "./outils/porte-de-duplication.mjs"
+    },
+    "./outils/workflow-github": {
+      "import": "./outils/workflow-github.mjs"
     }
   },
   "typesVersions": {
     "*": {
+      "api": [
+        "dist/cjs/api.d.ts"
+      ],
       "contrats": [
         "dist/cjs/contrats.d.ts"
       ],
@@ -71,6 +107,9 @@
       ],
       "score": [
         "dist/cjs/score.d.ts"
+      ],
+      "valeurs": [
+        "dist/cjs/valeurs.d.ts"
       ]
     }
   },
@@ -80,7 +119,27 @@
     "test": "vitest run",
     "format:check": "prettier --check .",
     "verifier:paquet": "node scripts/verifier-paquet.mjs",
-    "ci:check": "npm run typecheck && npm run format:check && npm test && npm run build && npm run verifier:paquet"
+    "guard:comments": "node outils/garde-commentaires/cli.mjs --root .",
+    "guard:comments:count": "node outils/garde-commentaires/cli.mjs --root . --count",
+    "guard:comments:tighten": "node outils/garde-commentaires/cli.mjs --root . --tighten",
+    "ci:check": "npm run typecheck && npm run format:check && npm run guard:comments && npm test && npm run build && npm run verifier:paquet"
+  },
+  "guard-no-comments": {
+    "maxOffenses": 0,
+    "perimetre": [
+      "src/",
+      "test/",
+      "scripts/",
+      "outils/"
+    ]
+  },
+  "peerDependencies": {
+    "typescript": ">=5.7.2"
+  },
+  "peerDependenciesMeta": {
+    "typescript": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@types/node": "^22.15.3",
