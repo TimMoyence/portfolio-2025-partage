@@ -33,6 +33,15 @@ export function planterDossier(prefixe, fichiers = {}) {
 }
 
 /**
+ * @param {unknown} valeur
+ * @returns {valeur is PromiseLike<unknown>}
+ */
+function estAttendable(valeur) {
+  const porteuse = (typeof valeur === 'object' && valeur !== null) || typeof valeur === 'function';
+  return porteuse && typeof (/** @type {{ then?: unknown }} */ (valeur).then) === 'function';
+}
+
+/**
  * @template T
  * @param {string} prefixe
  * @param {Record<string, string>} fichiers
@@ -49,7 +58,9 @@ export function avecDossierPlante(prefixe, fichiers, executer) {
     nettoyer();
     throw erreur;
   }
-  if (resultat instanceof Promise) return /** @type {T} */ (resultat.finally(nettoyer));
+  if (estAttendable(resultat)) {
+    return /** @type {T} */ (Promise.resolve(resultat).finally(nettoyer));
+  }
   nettoyer();
   return resultat;
 }

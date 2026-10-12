@@ -15,6 +15,7 @@ import {
   sansDebut,
   sansFin,
 } from '../src/valeurs';
+import type { EntierPositif, EntierStrictementPositif } from '../src/valeurs';
 
 describe('estObjet', () => {
   it.each([[{}], [{ a: 1 }], [Object.create(null)]])('reconnaît %o', (valeur) => {
@@ -70,6 +71,14 @@ describe('estEntierPositif', () => {
     expect(estEntierPositif(valeur)).toBe(false);
   });
 
+  it('restreint une valeur inconnue au type marque, utilisable comme number', () => {
+    const valeur: unknown = 0;
+    if (estEntierPositif(valeur)) {
+      expectTypeOf(valeur).toEqualTypeOf<EntierPositif>();
+      expectTypeOf(valeur).toExtend<number>();
+    }
+  });
+
   it('garde le type number dans la branche fausse', () => {
     const lire = (valeur: number): boolean => {
       if (!estEntierPositif(valeur)) expectTypeOf(valeur).toEqualTypeOf<number>();
@@ -99,9 +108,12 @@ describe('estEntierStrictementPositif', () => {
     expect(estEntierStrictementPositif(valeur)).toBe(false);
   });
 
-  it('restreint une valeur inconnue a un entier utilisable comme number', () => {
+  it('restreint une valeur inconnue au type marque, utilisable comme number', () => {
     const valeur: unknown = 3;
-    if (estEntierStrictementPositif(valeur)) expectTypeOf(valeur).toExtend<number>();
+    if (estEntierStrictementPositif(valeur)) {
+      expectTypeOf(valeur).toEqualTypeOf<EntierStrictementPositif>();
+      expectTypeOf(valeur).toExtend<number>();
+    }
   });
 
   it('garde le type number dans la branche fausse', () => {

@@ -6,6 +6,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import ts from 'typescript';
 
+import { nomsAttendus, verifierLesValeurs } from './genres-d-export.mjs';
+
 const manifeste = JSON.parse(readFileSync('package.json', 'utf8'));
 const exiger = createRequire(import.meta.url);
 const ATTENDUS = {
@@ -311,57 +313,11 @@ const RESOLUTIONS = {
   bundler: { module: ts.ModuleKind.ESNext, moduleResolution: ts.ModuleResolutionKind.Bundler },
 };
 
-const nomsAttendus = ({
-  fonctions = [],
-  listes = [],
-  objets = [],
-  constantes = [],
-  chaines = [],
-  erreurs = [],
-  types = [],
-}) => [...fonctions, ...listes, ...objets, ...constantes, ...chaines, ...erreurs, ...types];
-
 assert.deepEqual(
   Object.keys(manifeste.exports).sort(),
   [...Object.keys(ATTENDUS), ...Object.keys(OUTILS)].map((entree) => `./${entree}`).sort(),
   'chaque entrée du paquet doit être vérifiée ici',
 );
-
-function verifierLesValeurs(
-  ici,
-  module,
-  { fonctions = [], listes = [], objets = [], constantes = [], chaines = [], erreurs = [] },
-) {
-  for (const fonction of fonctions) {
-    assert.equal(typeof module[fonction], 'function', `${ici} : ${fonction}`);
-  }
-  for (const liste of listes) {
-    assert.ok(
-      Array.isArray(module[liste]) && Object.isFrozen(module[liste]),
-      `${ici} : ${liste} doit être une liste gelée`,
-    );
-  }
-  for (const objet of objets) {
-    assert.ok(
-      typeof module[objet] === 'object' &&
-        !Array.isArray(module[objet]) &&
-        Object.isFrozen(module[objet]),
-      `${ici} : ${objet} doit être un objet gelé`,
-    );
-  }
-  for (const constante of constantes) {
-    assert.equal(typeof module[constante], 'number', `${ici} : ${constante}`);
-  }
-  for (const chaine of chaines) {
-    assert.equal(typeof module[chaine], 'string', `${ici} : ${chaine}`);
-  }
-  for (const erreur of erreurs) {
-    assert.ok(
-      typeof module[erreur] === 'function' && module[erreur].prototype instanceof Error,
-      `${ici} : ${erreur} doit être une classe d erreur`,
-    );
-  }
-}
 
 for (const [entree, attendus] of Object.entries(ATTENDUS)) {
   const specificateur = `${manifeste.name}/${entree}`;

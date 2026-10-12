@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
 
 import { racineDuDepot } from '../outils/depot.mjs';
@@ -46,6 +47,35 @@ describe('outils — dossier temporaire', () => {
       planté = racine;
       await new Promise((suite) => setTimeout(suite, 0));
       return existsSync(join(racine, 'a.txt'));
+    });
+    expect(vuAprèsAttente).toBe(true);
+    expect(existsSync(planté)).toBe(false);
+  });
+
+  it.each([
+    [
+      'un thenable',
+      (travail: () => boolean): PromiseLike<boolean> => ({
+        then: (resoudre, rejeter) =>
+          new Promise<boolean>((suite) => setTimeout(() => suite(travail()), 0)).then(
+            resoudre,
+            rejeter,
+          ),
+      }),
+    ],
+    [
+      'une promesse d un autre royaume',
+      (travail: () => boolean): PromiseLike<boolean> =>
+        runInNewContext('new Promise((suite) => setTimeout(() => suite(travail()), 0))', {
+          setTimeout,
+          travail,
+        }) as PromiseLike<boolean>,
+    ],
+  ])('attend %s avant de supprimer le dossier', async (_cas, differer) => {
+    let planté = '';
+    const vuAprèsAttente = await avecDossierPlante('outils-', { 'a.txt': 'x' }, (racine) => {
+      planté = racine;
+      return differer(() => existsSync(join(racine, 'a.txt')));
     });
     expect(vuAprèsAttente).toBe(true);
     expect(existsSync(planté)).toBe(false);
