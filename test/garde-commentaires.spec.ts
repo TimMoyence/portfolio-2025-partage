@@ -66,6 +66,13 @@ const ts = (text: string, file = 'src/a.service.ts') => analyzeFile({ text, file
 const linesOf = (offenders: ReturnType<typeof analyzeFile>): number[] =>
   offenders.map((o) => o.line);
 
+const mesurerLaCroissance = (cas: string, taille: number) =>
+  JSON.parse(
+    execFileSync(process.execPath, ['test/mesure-de-croissance.mjs', cas, String(taille)], {
+      encoding: 'utf8',
+    }),
+  ) as { croissance: number; derniereLigne: number };
+
 const lancerLeBin = (args: string[]) =>
   spawnSync(process.execPath, [manifesteDuPaquet.bin['garde-commentaires'], ...args], {
     encoding: 'utf8',
@@ -219,6 +226,38 @@ describe('garde-commentaires — doctrine', () => {
     expect(analyzeFile({ text: scss, file: 'src/styles/_a.scss' })).toEqual([]);
   });
 
+  it('SCSS : un commentaire place apres une URL sur la meme ligne est lu', () => {
+    const scss = 'a { background: url(http://exemple.fr/a.png); } // on recupere le fond';
+    expect(linesOf(analyzeFile({ text: scss, file: 'src/styles/_a.scss' }))).toEqual([1]);
+  });
+
+  it('CONTROLE NEGATIF : en SCSS, un `//` de chaine ou d url() non citee n ouvre pas un commentaire', () => {
+    const scss = L(
+      '.a {',
+      '  background: url(//cdn.exemple.fr/a.png);',
+      "  content: 'l\\'a // b';",
+      '  font-family: "x//y";',
+      '  quotes: "/* cite */";',
+      '}',
+    );
+    expect(analyzeFile({ text: scss, file: 'src/styles/_a.scss' })).toEqual([]);
+  });
+
+  it.each([
+    ['blocs-vides', 10_000, 20_000],
+    ['scss', 10_000, 20_000],
+    ['html', 10_000, 20_000],
+    ['non-fermes', 40_000, 1],
+  ])(
+    'ANTI-QUADRATIQUE : doubler les commentaires (%s) ne quadruple pas le temps, et la derniere ligne est jugee',
+    (cas, taille, derniereLigne) => {
+      const mesure = mesurerLaCroissance(cas, taille);
+      expect(mesure.croissance).toBeLessThan(3);
+      expect(mesure.derniereLigne).toBe(derniereLigne);
+    },
+    30_000,
+  );
+
   it('SCSS : les deux syntaxes de commentaire sont lues, et une banniere de section est une offense', () => {
     const scss = L(
       '/* --- Section titres --- */',
@@ -277,6 +316,22 @@ describe('garde-commentaires — doctrine', () => {
       'const a = 1;',
     );
     expect(linesOf(ts(text))).toEqual([1]);
+  });
+
+  it.each(['a/', 'a.', 'AB-'])(
+    'ANTI-REDOS : une ligne de 80 ko faite de %s se juge en temps lineaire',
+    (motif) => {
+      const ligne = motif.repeat(Math.ceil(80_000 / motif.length));
+      const debut = performance.now();
+      const offenses = ts(L(`// ${ligne}`, 'const a = 1;'));
+      expect(performance.now() - debut).toBeLessThan(500);
+      expect(linesOf(offenses)).toEqual([1]);
+    },
+  );
+
+  it('parcourt sans debordement de pile une somme de 20 000 termes que tsc accepte', () => {
+    const somme = `export const total = ${Array.from({ length: 20_000 }, () => '1').join(' + ')};`;
+    expect(linesOf(ts(L(somme, '// prose', 'const a = 1;')))).toEqual([2]);
   });
 
   it('ANTI-TROU : une ancre ne blanchit ni un TODO ni du code commente', () => {
@@ -359,11 +414,40 @@ describe('garde-commentaires — périmètre', () => {
     });
   });
 
-  it.each([[[]], [['src']], [[1]], ['src/'], [null], [['']]])(
-    'un périmètre %j est refusé plutôt que subi',
+  it.each([
+    [[]],
+    [['src']],
+    [[1]],
+    ['src/'],
+    [null],
+    [['']],
+    [['./src/']],
+    [['//']],
+    [['../']],
+    [['src//']],
+    [['/src/']],
+    [['src/../']],
+    [['src\\a/']],
+    [['src/', './test/']],
+  ])('un périmètre %j est refusé plutôt que subi', (perimetre) => {
+    withRepo({ config: { perimetre } }, (root) => {
+      expect(() => declaredScope(root)).toThrow(/guard-no-comments.*perimetre/);
+    });
+  });
+
+  it.each([[['src/', 'srcs/']], [['src/', 'dist/']], [['src/', 'docs/']]])(
+    'une entrée déclarée %j qui ne désigne aucun fichier inspectable fait refuser le gate',
     (perimetre) => {
-      withRepo({ config: { perimetre } }, (root) => {
-        expect(() => declaredScope(root)).toThrow(/perimetre/);
+      const files = {
+        'src/a.service.ts': narrative(1),
+        'dist/a.js': 'export const a = 1;\n',
+        'docs/notes.md': '# notes\n',
+        'eslint.config.js': 'export default [];\n',
+      };
+      withRepo({ files, config: { perimetre } }, (root) => {
+        expect(() => runGate({ root })).toThrow(
+          new RegExp(`guard-no-comments.*${perimetre[1]}.*aucun fichier`),
+        );
       });
     },
   );
@@ -460,7 +544,7 @@ describe('garde-commentaires — cliquet', () => {
       expect(verdict).toMatch(
         /PLAFOND ABAISSABLE — 2 violation\(s\) sous un plafond de 5 : abaissez-le a 2/,
       );
-      expect(verdict).toMatch(/`garde-commentaires --root \. --tighten`/);
+      expect(verdict).toMatch(/`npx garde-commentaires --root \. --tighten`/);
     });
   });
 

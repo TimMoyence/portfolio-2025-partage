@@ -1,6 +1,8 @@
 import ts from 'typescript';
 
 /** @typedef {{ raw: string, startLine: number, endLine: number, column: number, emptyBlock: boolean }} ExtractedBlock */
+/** @typedef {{ pos: number, end: number }} CommentSpan */
+/** @typedef {{ text: string, getLineAndCharacterOfPosition(pos: number): import('typescript').LineAndCharacter }} LocatedText */
 
 /**
  * @param {string} file
@@ -25,18 +27,43 @@ function isEmptyBraces(node) {
 
 /**
  * @param {import('typescript').SourceFile} sf
- * @returns {{ from: number, to: number }[]}
+ * @returns {Generator<import('typescript').Node>}
  */
-function emptyBraceRanges(sf) {
-  /** @type {{ from: number, to: number }[]} */
-  const ranges = [];
-  /** @param {import('typescript').Node} node @returns {void} */
-  const walk = (node) => {
-    if (isEmptyBraces(node)) ranges.push({ from: node.getStart(sf), to: node.getEnd() });
-    for (const child of node.getChildren(sf)) walk(child);
+function* nodesOf(sf) {
+  /** @type {import('typescript').Node[]} */
+  const pending = [sf];
+  for (let node = pending.pop(); node !== undefined; node = pending.pop()) {
+    yield node;
+    const children = node.getChildren(sf);
+    for (let i = children.length - 1; i >= 0; i -= 1) pending.push(children[i]);
+  }
+}
+
+/**
+ * @param {LocatedText} source
+ * @param {CommentSpan} span
+ * @param {boolean} [emptyBlock]
+ * @returns {ExtractedBlock}
+ */
+function blockAt(source, { pos, end }, emptyBlock = false) {
+  const start = source.getLineAndCharacterOfPosition(pos);
+  return {
+    raw: source.text.slice(pos, end),
+    startLine: start.line + 1,
+    endLine: source.getLineAndCharacterOfPosition(end).line + 1,
+    column: start.character,
+    emptyBlock,
   };
-  walk(sf);
-  return ranges;
+}
+
+/**
+ * @param {string} text
+ * @param {CommentSpan[]} spans
+ * @returns {ExtractedBlock[]}
+ */
+function blocksAt(text, spans) {
+  const source = ts.createSourceMapSource('', text);
+  return spans.map((span) => blockAt(source, span));
 }
 
 /**
@@ -87,11 +114,11 @@ function mergeContiguous(blocks) {
  */
 export function sourceBlocks({ text, file }) {
   const sf = createSf(file, text);
-  const empties = emptyBraceRanges(sf);
   /** @type {ExtractedBlock[]} */
   const blocks = [];
   /** @type {Set<number>} */
   const seen = new Set();
+  let emptyBraces = { from: 0, to: 0 };
 
   /** @param {readonly import('typescript').CommentRange[] | undefined} ranges @returns {void} */
   const add = (ranges) => {
@@ -99,78 +126,109 @@ export function sourceBlocks({ text, file }) {
     for (const range of ranges) {
       if (seen.has(range.pos)) continue;
       seen.add(range.pos);
-      const raw = text.slice(range.pos, range.end);
-      const start = sf.getLineAndCharacterOfPosition(range.pos);
-      blocks.push({
-        raw,
-        startLine: start.line + 1,
-        endLine: sf.getLineAndCharacterOfPosition(range.end).line + 1,
-        column: start.character,
-        emptyBlock: empties.some((r) => range.pos > r.from && range.end < r.to),
-      });
+      const inside = range.pos > emptyBraces.from && range.end < emptyBraces.to;
+      blocks.push(blockAt(sf, range, inside));
     }
   };
 
-  /** @param {import('typescript').Node} node @returns {void} */
-  const walk = (node) => {
+  for (const node of nodesOf(sf)) {
+    if (isEmptyBraces(node) && node.getStart(sf) >= emptyBraces.to) {
+      emptyBraces = { from: node.getStart(sf), to: node.getEnd() };
+    }
     add(ts.getLeadingCommentRanges(text, node.getFullStart()));
     add(ts.getTrailingCommentRanges(text, node.getEnd()));
-    for (const child of node.getChildren(sf)) walk(child);
-  };
-  walk(sf);
+  }
   return mergeContiguous(blocks);
 }
 
-/** @typedef {{ open: string, close: string }} Delimiters */
+const CLOSING_OF_STRING = new Map([
+  ['"', new Set(['"', '\n'])],
+  ["'", new Set(["'", '\n'])],
+]);
+const CLOSING_OF_URL = new Set([')']);
+const UNQUOTED_URL = /(?<![\w-])url\(\s*(?!["'\s])/iy;
 
 /**
  * @param {string} text
- * @param {Delimiters} delimiters
- * @returns {ExtractedBlock[]}
+ * @param {number} from
+ * @param {string} close
+ * @returns {number}
  */
-function delimitedBlocks(text, { open, close }) {
-  /** @type {ExtractedBlock[]} */
-  const blocks = [];
-  let from = 0;
-  for (;;) {
-    const start = text.indexOf(open, from);
-    if (start < 0) return blocks;
-    const closeAt = text.indexOf(close, start + open.length);
-    const end = closeAt < 0 ? text.length : closeAt + close.length;
-    const startLine = text.slice(0, start).split('\n').length;
-    const raw = text.slice(start, end);
-    blocks.push({
-      raw,
-      startLine,
-      endLine: startLine + raw.split('\n').length - 1,
-      column: start - (text.lastIndexOf('\n', start - 1) + 1),
-      emptyBlock: false,
-    });
-    from = end;
-  }
+function afterClose(text, from, close) {
+  const at = text.indexOf(close, from);
+  return at < 0 ? text.length : at + close.length;
 }
 
 /**
  * @param {string} text
- * @returns {ExtractedBlock[]}
+ * @param {number} from
+ * @param {ReadonlySet<string>} closing
+ * @returns {number}
  */
-function slashSlashBlocks(text) {
-  const masked = text.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '));
-  const lines = text.split('\n');
-  return masked.split('\n').flatMap((line, i) => {
-    const at = line.indexOf('//');
-    if (at < 0) return [];
-    if (/https?:$/.test(line.slice(0, at))) return [];
-    return [
-      {
-        raw: lines[i].slice(at),
-        startLine: i + 1,
-        endLine: i + 1,
-        column: at,
-        emptyBlock: false,
-      },
-    ];
-  });
+function afterUnescaped(text, from, closing) {
+  for (let i = from; i < text.length; i += 1) {
+    if (text[i] === '\\') i += 1;
+    else if (closing.has(text[i])) return i + 1;
+  }
+  return text.length;
+}
+
+/**
+ * @param {string} text
+ * @param {number} at
+ * @returns {number}
+ */
+function styleCommentEnd(text, at) {
+  if (text.startsWith('/*', at)) return afterClose(text, at + 2, '*/');
+  if (!text.startsWith('//', at)) return -1;
+  const newline = text.indexOf('\n', at);
+  return newline < 0 ? text.length : newline;
+}
+
+/**
+ * @param {string} text
+ * @param {number} at
+ * @returns {number}
+ */
+function afterNonComment(text, at) {
+  const closing = CLOSING_OF_STRING.get(text[at]);
+  if (closing) return afterUnescaped(text, at + 1, closing);
+  UNQUOTED_URL.lastIndex = at;
+  if (UNQUOTED_URL.test(text)) return afterUnescaped(text, UNQUOTED_URL.lastIndex, CLOSING_OF_URL);
+  return at + 1;
+}
+
+/**
+ * @param {string} text
+ * @returns {CommentSpan[]}
+ */
+function styleCommentSpans(text) {
+  /** @type {CommentSpan[]} */
+  const spans = [];
+  let at = 0;
+  while (at < text.length) {
+    const end = styleCommentEnd(text, at);
+    if (end < 0) {
+      at = afterNonComment(text, at);
+      continue;
+    }
+    spans.push({ pos: at, end });
+    at = end;
+  }
+  return spans;
+}
+
+/**
+ * @param {string} text
+ * @returns {CommentSpan[]}
+ */
+function markupCommentSpans(text) {
+  /** @type {CommentSpan[]} */
+  const spans = [];
+  for (let pos = text.indexOf('<!--'); pos >= 0; pos = text.indexOf('<!--', spans.at(-1)?.end)) {
+    spans.push({ pos, end: afterClose(text, pos + 4, '-->') });
+  }
+  return spans;
 }
 
 /**
@@ -178,10 +236,7 @@ function slashSlashBlocks(text) {
  * @returns {ExtractedBlock[]}
  */
 export function styleBlocks({ text }) {
-  return mergeContiguous([
-    ...delimitedBlocks(text, { open: '/*', close: '*/' }),
-    ...slashSlashBlocks(text),
-  ]);
+  return mergeContiguous(blocksAt(text, styleCommentSpans(text)));
 }
 
 /**
@@ -189,5 +244,5 @@ export function styleBlocks({ text }) {
  * @returns {ExtractedBlock[]}
  */
 export function markupBlocks({ text }) {
-  return delimitedBlocks(text, { open: '<!--', close: '-->' });
+  return blocksAt(text, markupCommentSpans(text));
 }

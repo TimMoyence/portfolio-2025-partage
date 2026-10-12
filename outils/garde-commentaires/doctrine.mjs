@@ -41,10 +41,10 @@ const ANCHOR_RES = [
   /\bWCAG\s?\d(?:\.\d+)*\b/i,
   /\bISO[\s-]?\d{4,5}\b/,
   /\bECMA-\d+\b/,
-  /\b[A-Za-z][\w@/.+-]*\s+v?\d+\.\d+(?:\.\d+)?\b/,
-  /\b[A-Z][A-Z0-9]{1,7}(?:-[A-Z0-9]{1,7})*-\d+\b/,
+  /(?<![\w@/.+-])(?=[\w@/.+-]*?\b[A-Za-z])[\w@/.+-]+\s+v?\d+\.\d+(?:\.\d+)?\b/,
+  /\b[A-Z][A-Z0-9]{1,7}(?:-[A-Z0-9]{1,7}){0,4}-\d+\b/,
   /\b\d{4}-\d{2}-\d{2}\b/,
-  /\b[\w.-]+\.(?:ts|tsx|mts|cts|js|mjs|cjs|scss|css|html|json|jsonc|ya?ml|md|sql|env)\b/,
+  /(?<![\w.-])[.-]*\w[\w.-]*\.(?:ts|tsx|mts|cts|js|mjs|cjs|scss|css|html|json|jsonc|ya?ml|md|sql|env)\b/,
   /\(\d+\s*,\s*\d+\s*,\s*\d+\)/,
 ];
 

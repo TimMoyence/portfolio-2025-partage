@@ -83,15 +83,21 @@ export function ratchetCeiling(root) {
 }
 
 /**
+ * @param {unknown} dir
+ * @returns {dir is string}
+ */
+function isRelativeDirectory(dir) {
+  if (typeof dir !== 'string' || !dir.endsWith('/') || dir.includes('\\')) return false;
+  const segments = dir.slice(0, -1).split('/');
+  return segments.every((segment) => segment !== '' && segment !== '.' && segment !== '..');
+}
+
+/**
  * @param {unknown} declared
  * @returns {declared is string[]}
  */
 function isScope(declared) {
-  return (
-    Array.isArray(declared) &&
-    declared.length > 0 &&
-    declared.every((dir) => typeof dir === 'string' && dir.length > 1 && dir.endsWith('/'))
-  );
+  return Array.isArray(declared) && declared.length > 0 && declared.every(isRelativeDirectory);
 }
 
 /**
@@ -104,7 +110,7 @@ export function declaredScope(root) {
   if (declared === undefined) return PERIMETRE_PAR_DEFAUT;
   if (!isScope(declared)) {
     throw new Error(
-      `${GATE}: "${GATE}".perimetre vaut ${JSON.stringify(declared)} dans ${manifest} — attendu une liste non vide de dossiers terminant par /.`,
+      `${GATE}: "${GATE}".perimetre vaut ${JSON.stringify(declared)} dans ${manifest} — attendu une liste non vide de dossiers relatifs normalises terminant par / (ni ./, ni ../, ni //, ni / en tete).`,
     );
   }
   return declared;
@@ -161,6 +167,15 @@ export function runGate({ root = '.' } = {}) {
       `${GATE}: aucun fichier du perimetre sous ${root} — un gate qui n'inspecte rien n'atteste rien.`,
     );
   }
+  const vides =
+    perimetre === PERIMETRE_PAR_DEFAUT
+      ? []
+      : perimetre.filter((dir) => !files.some((file) => file.startsWith(dir)));
+  if (vides.length > 0) {
+    throw new Error(
+      `${GATE}: ${vides.join(', ')} du perimetre declare ne designe aucun fichier suivi inspectable sous ${root} — une entree qui n'inspecte rien n'atteste rien.`,
+    );
+  }
   const readable = files.filter((rel) => existsSync(join(root, rel)));
   if (readable.length === 0) {
     throw new Error(`${GATE}: 0 fichier reellement lu sous ${root} — verdict non falsifiable.`);
@@ -183,7 +198,7 @@ export function runGate({ root = '.' } = {}) {
   };
 }
 
-export const TIGHTEN_COMMAND = 'garde-commentaires --root . --tighten';
+const TIGHTEN_COMMAND = 'npx garde-commentaires --root . --tighten';
 
 /**
  * @param {{ offenders: Offender[], inspected: number, ceiling?: number }} result
