@@ -177,6 +177,36 @@ describe('garde-commentaires — doctrine', () => {
     expect(linesOf(ts(text))).toEqual([4]);
   });
 
+  it.each([
+    [
+      L(
+        '@Component({',
+        "  selector: 'app-a',",
+        '  // on recupere le user puis on le renvoie',
+        "  template: '',",
+        '})',
+        'export class AComponent {}',
+      ),
+      [3],
+    ],
+    [
+      L(
+        'export class A extends mixin(() => {',
+        '  // on recupere le user puis on le renvoie',
+        '  return Base;',
+        '}) {}',
+      ),
+      [2],
+    ],
+    [L('export class A {', '  // on recupere le user puis on le renvoie', '}'), []],
+    [L('@Injectable({', '  // rien a configurer ici', '})', 'export class A {}'), []],
+  ])(
+    'EXCEPTION 2 : d une classe sans membre, seul le corps est un bloc vide (%j)',
+    (text, lignes) => {
+      expect(linesOf(ts(text, 'src/a.component.ts'))).toEqual(lignes);
+    },
+  );
+
   it('EXCEPTION 2 : un bloc vide ne blanchit pas du code commente ni un TODO', () => {
     const dead = L('try {', '  risky();', '} catch {', '  // log(err);', '}');
     expect(ts(dead).map((o) => o.reason)).toEqual(['code commente']);
@@ -244,10 +274,29 @@ describe('garde-commentaires — doctrine', () => {
   });
 
   it.each([
+    ['src/styles/_a.scss', ".it\\'s { color: red; } // on recupere le user puis on le renvoie", 1],
+    ['src/styles/_a.scss', '.q\\" { color: red; } // on recupere le user puis on le renvoie', 1],
+    [
+      'src/styles/_a.scss',
+      L('$x: a;', '.a { content: "a #{$x + \'"\'} c"; } // on recupere le user puis on le renvoie'),
+      2,
+    ],
+    ['src/styles/a.css', ".l\\'x { color: red; } /* on recupere le user puis on le renvoie */", 1],
+    ['src/styles/a.css', '.a { content: "#{"; } /* on recupere le user puis on le renvoie */', 1],
+  ])(
+    'STYLE : ni un guillemet echappe hors chaine ni une interpolation SCSS n ouvrent une fausse chaine (%s, %j)',
+    (file, text, ligne) => {
+      expect(linesOf(analyzeFile({ text, file }))).toEqual([ligne]);
+    },
+  );
+
+  it.each([
     ['blocs-vides', 10_000, 20_000],
     ['scss', 10_000, 20_000],
     ['html', 10_000, 20_000],
     ['non-fermes', 40_000, 1],
+    ['trivia-partagee', 4_000, 1],
+    ['trivia-de-queue', 1_500, 1],
   ])(
     'ANTI-QUADRATIQUE : doubler les commentaires (%s) ne quadruple pas le temps, et la derniere ligne est jugee',
     (cas, taille, derniereLigne) => {

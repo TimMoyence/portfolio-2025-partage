@@ -13,6 +13,15 @@ const CAS = {
   scss: { file: 'src/styles/_a.scss', fabriquer: (n) => lignes(n, (i) => `/* c${i} */ a {}`) },
   html: { file: 'src/a.html', fabriquer: (n) => lignes(n, (i) => `<!-- c${i} --><p></p>`) },
   'non-fermes': { file: 'src/styles/_a.scss', fabriquer: (n) => 'a/*'.repeat(n) },
+  'trivia-partagee': {
+    file: 'src/a.service.ts',
+    fabriquer: (n) =>
+      `export const a = /* ${'x'.repeat(32 * n)} */ ${Array.from({ length: n }, () => '1').join(' + ')};`,
+  },
+  'trivia-de-queue': {
+    file: 'src/a.service.ts',
+    fabriquer: (n) => `${'a = '.repeat(n)}1 /* ${'x'.repeat(32 * n)} */;`,
+  },
 };
 
 /**

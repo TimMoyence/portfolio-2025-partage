@@ -4,7 +4,13 @@ import { join } from 'node:path';
 
 import { blockOffenses, declaredDependencies } from './doctrine.mjs';
 import { markupBlocks, sourceBlocks, styleBlocks } from './extraction.mjs';
-import { hasJsdocTypes, isInScope, languageOf, PERIMETRE_PAR_DEFAUT } from './perimetre.mjs';
+import {
+  dansLEntree,
+  hasJsdocTypes,
+  isInScope,
+  languageOf,
+  PERIMETRE_PAR_DEFAUT,
+} from './perimetre.mjs';
 
 export const GATE = 'guard-no-comments';
 
@@ -16,7 +22,7 @@ export const GATE = 'guard-no-comments';
  */
 function blocksOf({ text, file }) {
   const lang = languageOf(file);
-  if (lang === 'style') return styleBlocks({ text });
+  if (lang === 'style') return styleBlocks({ text, file });
   if (lang === 'markup') return markupBlocks({ text });
   return sourceBlocks({ text, file });
 }
@@ -170,7 +176,7 @@ export function runGate({ root = '.' } = {}) {
   const vides =
     perimetre === PERIMETRE_PAR_DEFAUT
       ? []
-      : perimetre.filter((dir) => !files.some((file) => file.startsWith(dir)));
+      : perimetre.filter((entree) => !files.some((file) => dansLEntree(file, entree)));
   if (vides.length > 0) {
     throw new Error(
       `${GATE}: ${vides.join(', ')} du perimetre declare ne designe aucun fichier suivi inspectable sous ${root} — une entree qui n'inspecte rien n'atteste rien.`,

@@ -16,13 +16,49 @@ function createSf(file, text) {
 
 /**
  * @param {import('typescript').Node} node
+ * @param {import('typescript').SourceFile} sf
+ * @returns {CommentSpan | undefined}
+ */
+function emptyBracesOf(node, sf) {
+  if (ts.isClassDeclaration(node) || ts.isClassExpression(node)) {
+    return node.members.length === 0
+      ? { pos: node.members.pos - 1, end: node.getEnd() }
+      : undefined;
+  }
+  const empty = ts.isObjectLiteralExpression(node)
+    ? node.properties.length === 0
+    : (ts.isBlock(node) || ts.isModuleBlock(node)) && node.statements.length === 0;
+  return empty ? { pos: node.getStart(sf), end: node.getEnd() } : undefined;
+}
+
+/**
+ * @param {CommentSpan[]} spans
+ * @returns {CommentSpan[]}
+ */
+function outermost(spans) {
+  /** @type {CommentSpan[]} */
+  const kept = [];
+  for (const span of [...spans].sort((a, b) => a.pos - b.pos)) {
+    if (span.pos >= (kept.at(-1)?.end ?? 0)) kept.push(span);
+  }
+  return kept;
+}
+
+/**
+ * @param {CommentSpan[]} spans
+ * @param {CommentSpan} range
  * @returns {boolean}
  */
-function isEmptyBraces(node) {
-  if (ts.isObjectLiteralExpression(node)) return node.properties.length === 0;
-  if (ts.isBlock(node) || ts.isModuleBlock(node)) return node.statements.length === 0;
-  if (ts.isClassDeclaration(node) || ts.isClassExpression(node)) return node.members.length === 0;
-  return false;
+function isInside(spans, range) {
+  let low = 0;
+  let high = spans.length;
+  while (low < high) {
+    const middle = (low + high) >> 1;
+    if (spans[middle].pos < range.pos) low = middle + 1;
+    else high = middle;
+  }
+  const span = spans[low - 1];
+  return span !== undefined && range.end < span.end;
 }
 
 /**
@@ -114,37 +150,40 @@ function mergeContiguous(blocks) {
  */
 export function sourceBlocks({ text, file }) {
   const sf = createSf(file, text);
-  /** @type {ExtractedBlock[]} */
-  const blocks = [];
-  /** @type {Set<number>} */
-  const seen = new Set();
-  let emptyBraces = { from: 0, to: 0 };
+  /** @type {CommentSpan[]} */
+  const spans = [];
+  /** @type {Map<number, CommentSpan>} */
+  const comments = new Map();
+  const leading = new Set();
+  const trailing = new Set();
 
-  /** @param {readonly import('typescript').CommentRange[] | undefined} ranges @returns {void} */
-  const add = (ranges) => {
-    if (!ranges) return;
-    for (const range of ranges) {
-      if (seen.has(range.pos)) continue;
-      seen.add(range.pos);
-      const inside = range.pos > emptyBraces.from && range.end < emptyBraces.to;
-      blocks.push(blockAt(sf, range, inside));
+  /**
+   * @param {Set<number>} scanned
+   * @param {number} pos
+   * @param {(text: string, pos: number) => import('typescript').CommentRange[] | undefined} read
+   * @returns {void}
+   */
+  const scan = (scanned, pos, read) => {
+    if (scanned.has(pos)) return;
+    scanned.add(pos);
+    for (const range of read(text, pos) ?? []) {
+      if (!comments.has(range.pos)) comments.set(range.pos, range);
     }
   };
 
   for (const node of nodesOf(sf)) {
-    if (isEmptyBraces(node) && node.getStart(sf) >= emptyBraces.to) {
-      emptyBraces = { from: node.getStart(sf), to: node.getEnd() };
-    }
-    add(ts.getLeadingCommentRanges(text, node.getFullStart()));
-    add(ts.getTrailingCommentRanges(text, node.getEnd()));
+    const span = emptyBracesOf(node, sf);
+    if (span) spans.push(span);
+    scan(leading, node.getFullStart(), ts.getLeadingCommentRanges);
+    scan(trailing, node.getEnd(), ts.getTrailingCommentRanges);
   }
-  return mergeContiguous(blocks);
+  const empty = outermost(spans);
+  return mergeContiguous(
+    [...comments.values()].map((range) => blockAt(sf, range, isInside(empty, range))),
+  );
 }
 
-const CLOSING_OF_STRING = new Map([
-  ['"', new Set(['"', '\n'])],
-  ["'", new Set(["'", '\n'])],
-]);
+const QUOTES = new Set(['"', "'"]);
 const CLOSING_OF_URL = new Set([')']);
 const UNQUOTED_URL = /(?<![\w-])url\(\s*(?!["'\s])/iy;
 
@@ -161,16 +200,55 @@ function afterClose(text, from, close) {
 
 /**
  * @param {string} text
+ * @param {number} at
+ * @returns {number}
+ */
+function afterChar(text, at) {
+  return text[at] === '\\' ? at + 2 : at + 1;
+}
+
+/**
+ * @param {string} text
  * @param {number} from
  * @param {ReadonlySet<string>} closing
  * @returns {number}
  */
 function afterUnescaped(text, from, closing) {
-  for (let i = from; i < text.length; i += 1) {
-    if (text[i] === '\\') i += 1;
-    else if (closing.has(text[i])) return i + 1;
+  for (let i = from; i < text.length; i = afterChar(text, i)) {
+    if (closing.has(text[i])) return i + 1;
   }
   return text.length;
+}
+
+/**
+ * @param {string} text
+ * @param {number} from
+ * @param {string} quote
+ * @param {boolean} interpolates
+ * @returns {number}
+ */
+function afterString(text, from, quote, interpolates) {
+  const closers = [quote];
+  let i = from;
+  while (i < text.length && closers.length > 0) {
+    const closer = closers[closers.length - 1];
+    const char = text[i];
+    if (closer === '}') {
+      if (QUOTES.has(char)) closers.push(char);
+      else if (char === '{') closers.push('}');
+      else if (char === '}') closers.pop();
+      i += 1;
+    } else if (char === closer || char === '\n') {
+      closers.pop();
+      i += 1;
+    } else if (interpolates && text.startsWith('#{', i)) {
+      closers.push('}');
+      i += 2;
+    } else {
+      i = afterChar(text, i);
+    }
+  }
+  return Math.min(i, text.length);
 }
 
 /**
@@ -188,28 +266,29 @@ function styleCommentEnd(text, at) {
 /**
  * @param {string} text
  * @param {number} at
+ * @param {boolean} interpolates
  * @returns {number}
  */
-function afterNonComment(text, at) {
-  const closing = CLOSING_OF_STRING.get(text[at]);
-  if (closing) return afterUnescaped(text, at + 1, closing);
+function afterNonComment(text, at, interpolates) {
+  if (QUOTES.has(text[at])) return afterString(text, at + 1, text[at], interpolates);
   UNQUOTED_URL.lastIndex = at;
   if (UNQUOTED_URL.test(text)) return afterUnescaped(text, UNQUOTED_URL.lastIndex, CLOSING_OF_URL);
-  return at + 1;
+  return afterChar(text, at);
 }
 
 /**
  * @param {string} text
+ * @param {boolean} interpolates
  * @returns {CommentSpan[]}
  */
-function styleCommentSpans(text) {
+function styleCommentSpans(text, interpolates) {
   /** @type {CommentSpan[]} */
   const spans = [];
   let at = 0;
   while (at < text.length) {
     const end = styleCommentEnd(text, at);
     if (end < 0) {
-      at = afterNonComment(text, at);
+      at = afterNonComment(text, at, interpolates);
       continue;
     }
     spans.push({ pos: at, end });
@@ -232,11 +311,11 @@ function markupCommentSpans(text) {
 }
 
 /**
- * @param {{ text: string }} input
+ * @param {{ text: string, file: string }} input
  * @returns {ExtractedBlock[]}
  */
-export function styleBlocks({ text }) {
-  return mergeContiguous(blocksAt(text, styleCommentSpans(text)));
+export function styleBlocks({ text, file }) {
+  return mergeContiguous(blocksAt(text, styleCommentSpans(text, file.endsWith('.scss'))));
 }
 
 /**
