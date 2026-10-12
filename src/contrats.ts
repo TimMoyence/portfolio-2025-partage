@@ -1,3 +1,7 @@
+export * from './briques.js';
+export * from './cours-servi.js';
+export * from './seance.js';
+
 export const TYPES_QUESTION = Object.freeze([
   'numeric',
   'vote',
@@ -16,6 +20,10 @@ export type EtatPulse = (typeof ETATS_PULSE)[number];
 
 export const PHASES_DE_VOTE = Object.freeze(['vote', 'discussion', 'revote', 'revele'] as const);
 export type VotePhase = (typeof PHASES_DE_VOTE)[number];
+
+export function surLaJumelle(phase: VotePhase | undefined): boolean {
+  return phase === 'revote' || phase === 'revele';
+}
 
 export const PACING_MODES = Object.freeze(['pilote', 'libre'] as const);
 export type PacingMode = (typeof PACING_MODES)[number];

@@ -9,3 +9,9 @@ export function statutDuScore(score: number): StatutScore {
   }
   return score >= SEUIL_DE_VIGILANCE ? 'warning' : 'critical';
 }
+
+export const LIBELLES_DU_STATUT: Readonly<Record<StatutScore, string>> = Object.freeze({
+  critical: 'Critique',
+  warning: 'À améliorer',
+  ok: 'Objectif atteint',
+});
