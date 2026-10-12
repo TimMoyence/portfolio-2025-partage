@@ -630,6 +630,24 @@ describe('evaluerExpression', () => {
     expect(evaluerExpression('SI(1<2;10;20)', {}).valeur).toBe(10);
   });
 
+  it.each([
+    'NON()',
+    'NON(1;2)',
+    'SI(1)',
+    'SI(1;2;3;4)',
+    'EXP()',
+    'EXP(1;2)',
+    'PUISSANCE(2)',
+    'PUISSANCE(2;3;4)',
+    'QUARTILE(1)',
+    'VPM(0,1;2)',
+    'VPM(0,1;2;3;4;5;6)',
+    'NB.SI(1;">0")',
+    'PENTE(1;2)',
+  ])('refuse %s, dont le nombre ou le genre des arguments est faux', (expression) => {
+    expect(evaluerExpression(expression, {})).toEqual({ valeur: null, erreur: VALEUR });
+  });
+
   it('compare et rend 1 ou 0', () => {
     expect(evaluerExpression('SI(3<>4;1;0)', {}).valeur).toBe(1);
     expect(evaluerExpression('SI(4>=4;1;0)', {}).valeur).toBe(1);

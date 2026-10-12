@@ -115,12 +115,16 @@ function absoluteScheme(raw: string): string | null {
  * reference vide designe le document courant, donc `href=""` reste un lien
  * actif.
  */
+export function estUrlAutorisee(value: unknown): boolean {
+  const raw = String(value);
+  if (!raw.trim()) return false;
+  const scheme = absoluteScheme(raw);
+  return scheme === null || ALLOWED_URL_SCHEMES.has(scheme);
+}
+
 export function escapeUrl(value: unknown): UrlEchappee {
   const raw = String(value);
-  if (!raw.trim()) return emettre('url', INERT_URL);
-  const scheme = absoluteScheme(raw);
-  if (scheme === null) return emettre('url', escapeHtml(raw));
-  return emettre('url', ALLOWED_URL_SCHEMES.has(scheme) ? escapeHtml(raw) : INERT_URL);
+  return emettre('url', estUrlAutorisee(raw) ? escapeHtml(raw) : INERT_URL);
 }
 
 const JETON_CSS = /^[#\w.%-]+$/;
@@ -332,11 +336,16 @@ class LecteurDeGabarit {
     else if (!BLANC.test(c) && c !== '/') this.ouvrirAttribut(c);
   }
 
-  private apresNom(c: string): void {
+  private finirLeNom(c: string): boolean {
     if (c === '=') this.etat = 'avant-valeur';
     else if (c === '>') this.fermerBalise();
     else if (c === '/') this.etat = 'balise';
-    else if (!BLANC.test(c)) this.ouvrirAttribut(c);
+    else return false;
+    return true;
+  }
+
+  private apresNom(c: string): void {
+    if (!this.finirLeNom(c) && !BLANC.test(c)) this.ouvrirAttribut(c);
   }
 
   private dansValeur(c: string): void {
@@ -369,10 +378,7 @@ class LecteurDeGabarit {
 
   private dansNomAttribut(c: string): void {
     if (BLANC.test(c)) this.etat = 'apres-nom';
-    else if (c === '=') this.etat = 'avant-valeur';
-    else if (c === '>') this.fermerBalise();
-    else if (c === '/') this.etat = 'balise';
-    else this.attribut += c.toLowerCase();
+    else if (!this.finirLeNom(c)) this.attribut += c.toLowerCase();
   }
 
   private avantValeur(c: string): void {

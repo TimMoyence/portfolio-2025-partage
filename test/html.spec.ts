@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   escapeHtml,
   escapeUrl,
+  estUrlAutorisee,
   safeCss,
   safeHtml,
   type EscapedHtml,
@@ -91,6 +92,34 @@ describe('escapeUrl — schemas refusees et contournements', () => {
 
   it('neutralise le schema encode en entite hexadecimale', () => {
     expect(String(escapeUrl('&#x6a;avascript:alert(1)'))).toBe('&amp;#x6a;avascript:alert(1)');
+  });
+});
+
+describe('estUrlAutorisee', () => {
+  it.each([
+    'https://asilidesign.fr/x',
+    'http://example.com/',
+    'mailto:tim.moyence@outlook.fr',
+    '/formations',
+    '#icone',
+    'sprite.svg#icone',
+  ])('admet %s', (url) => {
+    expect(estUrlAutorisee(url)).toBe(true);
+  });
+
+  it.each([
+    'javascript:alert(1)',
+    'JaVaScRiPt:alert(1)',
+    'java\tscript:alert(1)',
+    'java\nscript:alert(1)',
+    ' javascript:alert(1)',
+    '\u0000javascript:alert(1)',
+    'data:text/html,<script>alert(1)</script>',
+    'vbscript:msgbox(1)',
+    '',
+    '  ',
+  ])('refuse %j', (url) => {
+    expect(estUrlAutorisee(url)).toBe(false);
   });
 });
 
