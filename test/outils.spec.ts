@@ -1,4 +1,5 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { runInNewContext } from 'node:vm';
@@ -91,6 +92,53 @@ describe('outils — dossier temporaire', () => {
       }),
     ).rejects.toThrow('échec voulu');
     expect(existsSync(planté)).toBe(false);
+  });
+
+  it.each([
+    [
+      'un getter then qui lève',
+      () => ({
+        get then(): unknown {
+          throw new Error('then illisible');
+        },
+      }),
+    ],
+    [
+      'un Proxy dont chaque lecture lève',
+      () =>
+        new Proxy(
+          {},
+          {
+            get() {
+              throw new Error('then illisible');
+            },
+          },
+        ),
+    ],
+    [
+      'un Proxy révoqué',
+      () => {
+        const { proxy, revoke } = Proxy.revocable({}, {});
+        revoke();
+        return proxy;
+      },
+    ],
+  ])('supprime le dossier quand lire le then de %s lève', (_cas, resultat) => {
+    let planté = '';
+    expect(() =>
+      avecDossierPlante('outils-', { 'a.txt': 'x' }, (racine) => {
+        planté = racine;
+        return resultat();
+      }),
+    ).toThrow();
+    expect(existsSync(planté)).toBe(false);
+  });
+
+  it('ne laisse aucun dossier quand un fichier à planter ne peut pas s écrire', () => {
+    const prefixe = `outils-fuite-${process.pid}-${Date.now()}-`;
+    const plantes = () => readdirSync(tmpdir()).filter((nom) => nom.startsWith(prefixe));
+    expect(() => planterDossier(prefixe, { a: 'fichier', 'a/b.txt': 'sous un fichier' })).toThrow();
+    expect(plantes()).toEqual([]);
   });
 
   it('planterDossier laisse le dossier à son appelant, supprimerDossier le retire', () => {

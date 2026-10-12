@@ -28,7 +28,12 @@ export function ecrireFichiers(racine, fichiers) {
  */
 export function planterDossier(prefixe, fichiers = {}) {
   const racine = mkdtempSync(join(tmpdir(), prefixe));
-  ecrireFichiers(racine, fichiers);
+  try {
+    ecrireFichiers(racine, fichiers);
+  } catch (erreur) {
+    supprimerDossier(racine);
+    throw erreur;
+  }
   return racine;
 }
 
@@ -51,16 +56,15 @@ function estAttendable(valeur) {
 export function avecDossierPlante(prefixe, fichiers, executer) {
   const racine = planterDossier(prefixe, fichiers);
   const nettoyer = () => supprimerDossier(racine);
-  let resultat;
+  let differe = false;
   try {
-    resultat = executer(racine);
-  } catch (erreur) {
-    nettoyer();
-    throw erreur;
+    const resultat = executer(racine);
+    if (estAttendable(resultat)) {
+      differe = true;
+      return /** @type {T} */ (Promise.resolve(resultat).finally(nettoyer));
+    }
+    return resultat;
+  } finally {
+    if (!differe) nettoyer();
   }
-  if (estAttendable(resultat)) {
-    return /** @type {T} */ (Promise.resolve(resultat).finally(nettoyer));
-  }
-  nettoyer();
-  return resultat;
 }
