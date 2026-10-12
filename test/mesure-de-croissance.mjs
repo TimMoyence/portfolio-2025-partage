@@ -14,6 +14,10 @@ const CAS = {
   scss: { file: 'src/styles/_a.scss', fabriquer: (n) => lignes(n, (i) => `/* c${i} */ a {}`) },
   html: { file: 'src/a.html', fabriquer: (n) => lignes(n, (i) => `<!-- c${i} --><p></p>`) },
   'non-fermes': { file: 'src/styles/_a.scss', fabriquer: (n) => 'a/*'.repeat(n) },
+  'url-imbriquees': {
+    file: 'src/styles/_a.scss',
+    fabriquer: (n) => `.a { b: ${'url({#{'.repeat(n)}${'}x y)'.repeat(n)}; }\n/* fin */`,
+  },
   'lignes-contigues': {
     file: 'src/a.service.ts',
     fabriquer: (n) => `${lignes(n, (i) => `// c${i}`)}\nexport const a = 1;`,

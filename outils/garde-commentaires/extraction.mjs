@@ -5,7 +5,9 @@ import { extensionOf } from './perimetre.mjs';
 /** @typedef {{ raw: string, startLine: number, endLine: number, column: number, emptyBlock: boolean }} ExtractedBlock */
 /** @typedef {{ pos: number, end: number }} CommentSpan */
 /** @typedef {{ text: string, getLineAndCharacterOfPosition(pos: number): import('typescript').LineAndCharacter }} LocatedText */
-/** @typedef {{ interpolates: boolean, spans: CommentSpan[] }} StyleScan */
+/** @typedef {{ end: number, spans: CommentSpan[] }} UrlRead */
+/** @typedef {{ steps: number, budget: number }} StyleWork */
+/** @typedef {{ interpolates: boolean, spans: CommentSpan[], urls: Map<number, UrlRead>, depth: number, work: StyleWork }} StyleScan */
 
 /** @type {Readonly<Record<string, import('typescript').ScriptKind>>} */
 const SCRIPT_KIND_OF = { tsx: ts.ScriptKind.TSX, jsx: ts.ScriptKind.JSX };
@@ -52,19 +54,38 @@ function outermost(spans) {
 
 /**
  * @param {CommentSpan[]} spans
- * @param {CommentSpan} range
- * @returns {boolean}
+ * @param {number} pos
+ * @returns {CommentSpan | undefined}
  */
-function isInside(spans, range) {
+function lastSpanBefore(spans, pos) {
   let low = 0;
   let high = spans.length;
   while (low < high) {
     const middle = (low + high) >> 1;
-    if (spans[middle].pos < range.pos) low = middle + 1;
+    if (spans[middle].pos < pos) low = middle + 1;
     else high = middle;
   }
-  const span = spans[low - 1];
+  return spans[low - 1];
+}
+
+/**
+ * @param {CommentSpan[]} spans
+ * @param {CommentSpan} range
+ * @returns {boolean}
+ */
+function isInside(spans, range) {
+  const span = lastSpanBefore(spans, range.pos);
   return span !== undefined && range.end < span.end;
+}
+
+/**
+ * @param {CommentSpan[]} spans
+ * @param {CommentSpan} range
+ * @returns {boolean}
+ */
+function startsIn(spans, range) {
+  const span = lastSpanBefore(spans, range.pos + 1);
+  return span !== undefined && range.pos < span.end;
 }
 
 /**
@@ -155,6 +176,8 @@ export function sourceBlocks({ text, file }) {
   const sf = createSf(file, text);
   /** @type {CommentSpan[]} */
   const spans = [];
+  /** @type {CommentSpan[]} */
+  const jsxTexts = [];
   /** @type {Map<number, CommentSpan>} */
   const comments = new Map();
   const leading = new Set();
@@ -177,19 +200,29 @@ export function sourceBlocks({ text, file }) {
   for (const node of nodesOf(sf)) {
     const span = emptyBracesOf(node, sf);
     if (span) spans.push(span);
+    if (ts.isJsxText(node)) jsxTexts.push({ pos: node.pos, end: node.end });
     scan(leading, node.getFullStart(), ts.getLeadingCommentRanges);
     scan(trailing, node.getEnd(), ts.getTrailingCommentRanges);
   }
   const empty = outermost(spans);
   return mergeContiguous(
-    [...comments.values()].map((range) => blockAt(sf, range, isInside(empty, range))),
+    [...comments.values()]
+      .filter((range) => !startsIn(jsxTexts, range))
+      .map((range) => blockAt(sf, range, isInside(empty, range))),
   );
 }
 
 const QUOTES = new Set(['"', "'"]);
-const UNQUOTED_URL = /(?<![\w-])url\(\s*(?!["'\s])/iy;
+const UNQUOTED_CSS_URL = /(?<![\w\u0080-￿-])url\(\s*(?!["'\s])/iy;
+const SCSS_URL = /(?<![\w\u0080-￿-])(?:-[\w\u0080-￿]+-)?url\(/iy;
+const CSS_WHITESPACE = /[ \t\n\r\f]/;
+const CSS_WHITESPACES = /[ \t\n\r\f]*/y;
+const CSS_ESCAPE = /\\(?:[\da-f]{1,6}[ \t\n\r\f]?|[^\n\r\f])/iy;
+export const MAX_RAW_URL_NESTING = 32;
+export const RAW_URL_STEPS_PER_CHAR = 16;
 const CLOSER_OF_INTERPOLATION = '}';
 const CLOSER_OF_URL = ')';
+const STATEMENT_BOUNDARIES = new Set(['{', ';', '}']);
 
 /**
  * @param {string} text
@@ -236,13 +269,97 @@ function afterComment(text, at, spans) {
 }
 
 /**
+ * @param {RegExp} sticky
  * @param {string} text
  * @param {number} at
  * @returns {number}
  */
-function afterUnquotedUrlOpening(text, at) {
-  UNQUOTED_URL.lastIndex = at;
-  return UNQUOTED_URL.test(text) ? UNQUOTED_URL.lastIndex : -1;
+function afterSticky(sticky, text, at) {
+  sticky.lastIndex = at;
+  return sticky.test(text) ? sticky.lastIndex : -1;
+}
+
+/**
+ * @param {string} char
+ * @returns {boolean}
+ */
+const isRawUrlChar = (char) =>
+  char === '!' || char === '%' || char === '&' || (char >= '*' && char <= '~') || char >= '\u0080';
+
+/**
+ * @param {string} text
+ * @param {number} at
+ * @returns {boolean}
+ */
+const opensExpressionSyntax = (text, at) =>
+  text[at] === '{' ||
+  text[at] === CLOSER_OF_INTERPOLATION ||
+  (text[at] === '/' && (text[at + 1] === '/' || text[at + 1] === '*'));
+
+/**
+ * @param {string} text
+ * @param {number} at
+ * @param {StyleScan} attempt
+ * @returns {number}
+ */
+function stepInRawUrl(text, at, attempt) {
+  const char = text[at];
+  if (char === '\\') return afterSticky(CSS_ESCAPE, text, at);
+  if (text.startsWith('#{', at)) {
+    return afterNested(text, at + 2, CLOSER_OF_INTERPOLATION, attempt);
+  }
+  if (CSS_WHITESPACE.test(char)) {
+    const next = afterSticky(CSS_WHITESPACES, text, at);
+    return text[next] === CLOSER_OF_URL ? next : -1;
+  }
+  return isRawUrlChar(char) ? at + 1 : -1;
+}
+
+/**
+ * @param {string} text
+ * @param {number} from
+ * @param {StyleScan} scan
+ * @returns {UrlRead}
+ */
+function readScssUrl(text, from, scan) {
+  /** @type {StyleScan} */
+  const attempt = { ...scan, spans: [], depth: scan.depth + 1 };
+  let divergence = -1;
+  let at = afterSticky(CSS_WHITESPACES, text, from);
+  while (at < text.length && text[at] !== CLOSER_OF_URL) {
+    scan.work.steps += 1;
+    if (divergence < 0 && opensExpressionSyntax(text, at)) divergence = at;
+    const next = stepInRawUrl(text, at, attempt);
+    if (next < 0) break;
+    at = next;
+  }
+  if (text[at] === CLOSER_OF_URL) return { end: at + 1, spans: attempt.spans };
+  const resume = divergence < 0 ? at : divergence;
+  return { end: resume, spans: attempt.spans.filter((span) => span.end <= resume) };
+}
+
+/**
+ * @param {string} text
+ * @param {number} at
+ * @param {StyleScan} scan
+ * @returns {number}
+ */
+function afterUrl(text, at, scan) {
+  if (!scan.interpolates) {
+    const from = afterSticky(UNQUOTED_CSS_URL, text, at);
+    return from < 0 ? -1 : afterNested(text, from, CLOSER_OF_URL, scan);
+  }
+  const from = afterSticky(SCSS_URL, text, at);
+  if (from < 0) return -1;
+  let read = scan.urls.get(at);
+  if (!read) {
+    const { work } = scan;
+    if (scan.depth >= MAX_RAW_URL_NESTING || work.steps >= work.budget) return -1;
+    read = readScssUrl(text, from, scan);
+    scan.urls.set(at, read);
+  }
+  for (const span of read.spans) scan.spans.push(span);
+  return read.end;
 }
 
 /**
@@ -255,11 +372,8 @@ function afterUnquotedUrlOpening(text, at) {
 function stepInInterpolation(text, at, closers, scan) {
   const commentEnd = afterComment(text, at, scan.spans);
   if (commentEnd >= 0) return commentEnd;
-  const urlStart = afterUnquotedUrlOpening(text, at);
-  if (urlStart >= 0) {
-    closers.push(CLOSER_OF_URL);
-    return urlStart;
-  }
+  const urlEnd = afterUrl(text, at, scan);
+  if (urlEnd >= 0) return urlEnd;
   const char = text[at];
   if (char === CLOSER_OF_INTERPOLATION) closers.pop();
   else if (char === '{') closers.push(CLOSER_OF_INTERPOLATION);
@@ -278,6 +392,7 @@ function afterNested(text, from, closer, scan) {
   const closers = [closer];
   let i = from;
   while (closers.length > 0 && i < text.length) {
+    scan.work.steps += 1;
     const current = closers[closers.length - 1];
     if (current === CLOSER_OF_INTERPOLATION) {
       i = stepInInterpolation(text, i, closers, scan);
@@ -304,9 +419,32 @@ function afterNested(text, from, closer, scan) {
  */
 function afterNonComment(text, at, scan) {
   if (QUOTES.has(text[at])) return afterNested(text, at + 1, text[at], scan);
-  const urlStart = afterUnquotedUrlOpening(text, at);
-  if (urlStart >= 0) return afterNested(text, urlStart, CLOSER_OF_URL, scan);
-  return afterChar(text, at);
+  if (scan.interpolates && text.startsWith('#{', at)) {
+    return afterNested(text, at + 2, CLOSER_OF_INTERPOLATION, scan);
+  }
+  const urlEnd = afterUrl(text, at, scan);
+  return urlEnd >= 0 ? urlEnd : afterChar(text, at);
+}
+
+/**
+ * @param {string} text
+ * @param {number} at
+ * @param {StyleScan} scan
+ * @returns {number}
+ */
+function afterStatementComment(text, at, scan) {
+  if (!scan.interpolates || !text.startsWith('/*', at)) return afterComment(text, at, scan.spans);
+  /** @type {StyleScan} */
+  const inside = { ...scan, spans: [] };
+  let i = at + 2;
+  while (i < text.length && !text.startsWith('*/', i)) {
+    i = text.startsWith('#{', i)
+      ? afterNested(text, i + 2, CLOSER_OF_INTERPOLATION, inside)
+      : i + 1;
+  }
+  const end = Math.min(i + 2, text.length);
+  scan.spans.push({ pos: at, end });
+  return end;
 }
 
 /**
@@ -316,11 +454,25 @@ function afterNonComment(text, at, scan) {
  */
 function styleCommentSpans(text, interpolates) {
   /** @type {StyleScan} */
-  const scan = { interpolates, spans: [] };
+  const scan = {
+    interpolates,
+    spans: [],
+    urls: new Map(),
+    depth: 0,
+    work: { steps: 0, budget: RAW_URL_STEPS_PER_CHAR * text.length },
+  };
   let at = 0;
+  let statement = true;
   while (at < text.length) {
-    const end = afterComment(text, at, scan.spans);
-    at = end < 0 ? afterNonComment(text, at, scan) : end;
+    const end = statement
+      ? afterStatementComment(text, at, scan)
+      : afterComment(text, at, scan.spans);
+    if (end >= 0) {
+      at = end;
+    } else {
+      if (!CSS_WHITESPACE.test(text[at])) statement = STATEMENT_BOUNDARIES.has(text[at]);
+      at = afterNonComment(text, at, scan);
+    }
   }
   return scan.spans;
 }

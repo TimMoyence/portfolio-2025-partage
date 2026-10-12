@@ -1,6 +1,7 @@
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execFile, execFileSync, spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { promisify } from 'node:util';
 import { describe, expect, it } from 'vitest';
 
 import { avecDossierPlante } from '../outils/dossier-temporaire.mjs';
@@ -17,6 +18,7 @@ import {
   runGate,
   tightenCeiling,
 } from '../outils/garde-commentaires/garde.mjs';
+import { MAX_RAW_URL_NESTING, styleBlocks } from '../outils/garde-commentaires/extraction.mjs';
 import { isInScope, PERIMETRE_PAR_DEFAUT } from '../outils/garde-commentaires/perimetre.mjs';
 import { DRAPEAUX_DE_MESURE } from './drapeaux-de-mesure.mjs';
 
@@ -67,14 +69,17 @@ const ts = (text: string, file = 'src/a.service.ts') => analyzeFile({ text, file
 const linesOf = (offenders: ReturnType<typeof analyzeFile>): number[] =>
   offenders.map((o) => o.line);
 
-const mesurerLaCroissance = (cas: string, taille: number) =>
-  JSON.parse(
-    execFileSync(
-      process.execPath,
-      [...DRAPEAUX_DE_MESURE, 'test/mesure-de-croissance.mjs', cas, String(taille)],
-      { encoding: 'utf8' },
-    ),
-  ) as { croissance: number; derniereLigne: number };
+const DELAI_DE_MESURE = 240_000;
+const executer = promisify(execFile);
+
+const mesurerLaCroissance = async (cas: string, taille: number) => {
+  const { stdout } = await executer(
+    process.execPath,
+    [...DRAPEAUX_DE_MESURE, 'test/mesure-de-croissance.mjs', cas, String(taille)],
+    { encoding: 'utf8', timeout: DELAI_DE_MESURE },
+  );
+  return JSON.parse(stdout) as { croissance: number; derniereLigne: number };
+};
 
 const lancerLeBin = (args: string[]) =>
   spawnSync(process.execPath, [manifesteDuPaquet.bin['garde-commentaires'], ...args], {
@@ -149,6 +154,24 @@ describe('garde-commentaires — doctrine', () => {
       expect(analyzeFile({ text, file })).toEqual([]);
     },
   );
+
+  it.each([
+    ['src/a.tsx', 'export const A = () => <span>// separateur</span>;'],
+    [
+      'src/a.tsx',
+      L('export const A = () => (', '  <p>', '    // pas un commentaire', '  </p>', ');'),
+    ],
+    ['src/a.jsx', 'export const A = (a) => <p>{a} /* pas un commentaire */</p>;'],
+    ['src/a.tsx', 'export const A = () => <>// x</>;'],
+    ['src/a.tsx', 'export const A = () => <a href="//cdn.exemple.fr/a.png">lien</a>;'],
+  ])('ANTI-TROU : un // dans un texte JSX n est pas un commentaire (%s : %s)', (file, text) => {
+    expect(analyzeFile({ text, file })).toEqual([]);
+  });
+
+  it('ANTI-TROU : {/* */} dans du JSX reste un commentaire', () => {
+    const text = 'export const A = () => <p>{/* une note qui raconte */}</p>;';
+    expect(linesOf(analyzeFile({ text, file: 'src/a.tsx' }))).toEqual([1]);
+  });
 
   it('EXCEPTION 1 : shebang d un script executable -> 0 offense', () => {
     expect(
@@ -359,6 +382,103 @@ describe('garde-commentaires — doctrine', () => {
   );
 
   it.each([
+    [
+      'V1 url() d expression dans une interpolation',
+      L('$a: x;', `.a { content: "#{ url($a + ")") }"; } // ${N}`, '.b { c: d; }', ''),
+      [2],
+    ],
+    [
+      'U1 url( non fermee dans une interpolation',
+      L('.a { content: "#{url(x}"; }', `// ${N}`, '.b { color: red; }', `// ${N}`, ''),
+      [2, 4],
+    ],
+    [
+      'U2 fonction citee dans une url()',
+      `.a { background: url(svg-url('<svg fill="rgb(0,0,0)"/>')); } // ${N}`,
+      [1],
+    ],
+    ['U3 parenthese citee dans une url()', '.a { background: url(f("a)b")); content: "//x"; }', []],
+    [
+      'U4 parenthese citee dans une fonction',
+      L('@function f($s) { @return $s; }', `.a { background: url(f(")")); } // ${N}`, ''),
+      [2],
+    ],
+    ['U5 commentaire entre espaces dans une url()', `.a { background: url(/* ${N} */ a); }`, [1]],
+    ['V2 commentaire dans une url() interpolee', `.a { content: "#{url(/* ${N} */ x)}"; }`, [1]],
+    ['variable dans une url()', L('$x: y;', `.a { background: url($x/* ${N} */); }`), [2]],
+    ['identifiant non ASCII finissant par url', L(`.a { b: éurl(1 // ${N}`, '); }'), [1]],
+    ['url() prefixee par un vendeur', '.a { background: -x-url(//cdn.exemple.fr/a.png); }', []],
+    ['url() nue entre espaces', '.a { background: url( a/*b*/c ); }', []],
+    ['url() nue a echappement hexadecimal', '.a { background: url(a\\41 //b); }', []],
+    ['url() nue interpolee', L('$x: y;', '.a { background: url(a#{$x}//b); }'), []],
+    ['url() nue sur deux lignes', L('.a { background: url(a', '); }'), []],
+  ])(
+    'STYLE : une url() non citee n est opaque que lue comme une URL nue par Sass (%s)',
+    (_cas, text, lignes) => {
+      expect(linesOf(analyzeFile({ text, file: 'src/styles/_a.scss' }))).toEqual(lignes);
+    },
+  );
+
+  const urlsImbriquees = (profondeur: number) =>
+    `.a { b: ${'url(#{'.repeat(profondeur - 1)}url(//cdn.exemple.fr/a.png)${'})'.repeat(profondeur - 1)}; }`;
+
+  it.each([
+    ['jusqu a la borne, l url() la plus profonde reste nue', MAX_RAW_URL_NESTING, []],
+    ['au-dela de la borne, elle se lit comme une expression', MAX_RAW_URL_NESTING + 1, [1]],
+  ])('STYLE : url() imbriquees dans des interpolations, %s', (_cas, profondeur, lignes) => {
+    expect(
+      linesOf(analyzeFile({ text: urlsImbriquees(profondeur), file: 'src/styles/_a.scss' })),
+    ).toEqual(lignes);
+  });
+
+  it('STYLE : une url() nue reste nue apres 12 url() imbriquees qui echouent, chacune lue une fois', () => {
+    const echecs = `.a { b: ${'url({#{'.repeat(12)}${'}x y)'.repeat(12)}; }`;
+    const text = L(echecs, '.b { c: url(//cdn.exemple.fr/a.png); }');
+    expect(linesOf(analyzeFile({ text, file: 'src/styles/_a.scss' }))).toEqual([]);
+  });
+
+  const ENTIER = '/* a #{"*/"} b */';
+  const COUPE = '/* #{ */';
+
+  it.each([
+    ['en tete de feuille', `${ENTIER} .x { c: d; }`, [ENTIER]],
+    ['apres une accolade ouvrante', `.a { ${ENTIER} c: d; }`, [ENTIER]],
+    ['apres un point-virgule', `.a { c: d; ${ENTIER} }`, [ENTIER]],
+    ['apres un bloc', `.a { c: d; } ${ENTIER}`, [ENTIER]],
+    ['apres un commentaire //', L('// x', `${ENTIER} .x { c: d; }`), ['// x', ENTIER]],
+    ['apres un commentaire /* */', `/* x */ ${ENTIER} .x { c: d; }`, ['/* x */', ENTIER]],
+    [
+      'sur deux lignes',
+      L('/* a #{"*/"}', '   b */', '.x { c: d; }'),
+      [L('/* a #{"*/"}', '   b */')],
+    ],
+    ['dans une valeur', `.a { b: c ${COUPE} d; }`, [COUPE]],
+    ['dans un selecteur', `.a ${COUPE} .b { c: d; }`, [COUPE]],
+    ['apres l interpolation d un selecteur', L('$x: y;', `.a-#{$x} ${COUPE} { c: d; }`), [COUPE]],
+    ['dans un argument', L('@mixin m($a) { b: $a; }', `.a { @include m(c ${COUPE}); }`), [COUPE]],
+  ])(
+    'STYLE : un commentaire /* */ SCSS n interpole #{} qu en position d instruction (%s)',
+    (_cas, text, bruts) => {
+      expect(styleBlocks({ text, file: 'src/styles/_a.scss' }).map((bloc) => bloc.raw)).toEqual(
+        bruts,
+      );
+    },
+  );
+
+  it('STYLE : un commentaire /* */ CSS n interpole rien', () => {
+    expect(
+      styleBlocks({ text: `${ENTIER} .x { c: d; }`, file: 'src/styles/a.css' }).map(
+        (bloc) => bloc.raw,
+      ),
+    ).toEqual(['/* a #{"*/']);
+  });
+
+  it('STYLE : 4 000 url() imbriquees qui echouent se lisent sans deborder la pile', () => {
+    const text = L(`.a { b: ${'url({#{'.repeat(4000)}${'}x y)'.repeat(4000)}; }`, `/* ${N} */`);
+    expect(linesOf(analyzeFile({ text, file: 'src/styles/_a.scss' }))).toEqual([2]);
+  });
+
+  it.each([
     ['src/styles/_A.SCSS', L('$x: a;', `.a { content: "a #{$x + '"'} c"; } // ${N}`)],
     ['src/styles/_a.Scss', L('$x: a;', `.a { content: "a #{$x + '"'} c"; } // ${N}`)],
     [
@@ -378,17 +498,18 @@ describe('garde-commentaires — doctrine', () => {
     ['scss', 10_000, 20_000],
     ['html', 10_000, 20_000],
     ['non-fermes', 40_000, 1],
+    ['url-imbriquees', 4_000, 2],
     ['lignes-contigues', 16_000, 32_000],
     ['trivia-partagee', 4_000, 1],
     ['trivia-de-queue', 1_500, 1],
   ])(
     'ANTI-QUADRATIQUE : doubler les commentaires (%s) ne quadruple pas le temps, et la derniere ligne est jugee',
-    (cas, taille, derniereLigne) => {
-      const mesure = mesurerLaCroissance(cas, taille);
+    async (cas, taille, derniereLigne) => {
+      const mesure = await mesurerLaCroissance(cas, taille);
       expect(mesure.croissance).toBeLessThan(3);
       expect(mesure.derniereLigne).toBe(derniereLigne);
     },
-    60_000,
+    DELAI_DE_MESURE + 10_000,
   );
 
   it('SCSS : les deux syntaxes de commentaire sont lues, et une banniere de section est une offense', () => {
