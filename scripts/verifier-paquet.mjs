@@ -328,15 +328,8 @@ for (const [entree, attendus] of Object.entries(ATTENDUS)) {
 }
 
 for (const [entree, attendus] of Object.entries(OUTILS)) {
-  const { types: _typesSansValeur, ...valeurs } = attendus;
   const specificateur = `${manifeste.name}/${entree}`;
-  const module = await import(specificateur);
-  assert.deepEqual(
-    Object.keys(module).sort(),
-    nomsAttendus(valeurs).sort(),
-    `${specificateur} : chaque export doit figurer dans OUTILS, et lui seul`,
-  );
-  verifierLesValeurs(specificateur, module, valeurs);
+  verifierLesValeurs(specificateur, await import(specificateur), attendus);
 }
 
 function exportsDeclares(fichier) {

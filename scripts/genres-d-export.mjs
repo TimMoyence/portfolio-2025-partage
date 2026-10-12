@@ -55,11 +55,16 @@ export const nomsAttendus = (attendus) => genresDe(attendus).flatMap(([, noms]) 
  * @returns {void}
  */
 export function verifierLesValeurs(ici, module, attendus) {
-  for (const [genre, noms] of genresDe(attendus)) {
-    const controle = CONTROLES_PAR_GENRE[genre];
-    if (controle === null) continue;
+  const valeurs = genresDe(attendus).filter(([genre]) => CONTROLES_PAR_GENRE[genre] !== null);
+  for (const [genre, noms] of valeurs) {
+    const controle = /** @type {Controle} */ (CONTROLES_PAR_GENRE[genre]);
     for (const nom of noms) {
       assert.ok(controle.estConforme(module[nom]), `${ici} : ${nom} doit être ${controle.attendu}`);
     }
   }
+  assert.deepEqual(
+    Object.keys(module).sort(),
+    valeurs.flatMap(([, noms]) => noms).sort(),
+    `${ici} : chaque valeur exportée doit figurer dans ses attendus, et elle seule`,
+  );
 }
