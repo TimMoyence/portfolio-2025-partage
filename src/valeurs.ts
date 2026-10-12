@@ -10,11 +10,19 @@ export function estMembre<T extends string>(valeurs: readonly T[], valeur: unkno
   return typeof valeur === 'string' && (valeurs as readonly string[]).includes(valeur);
 }
 
-export function estEntierPositif(valeur: unknown): valeur is number {
+declare const ENTIER_POSITIF: unique symbol;
+declare const ENTIER_STRICTEMENT_POSITIF: unique symbol;
+
+export type EntierPositif = number & { readonly [ENTIER_POSITIF]: true };
+export type EntierStrictementPositif = EntierPositif & {
+  readonly [ENTIER_STRICTEMENT_POSITIF]: true;
+};
+
+export function estEntierPositif(valeur: unknown): valeur is EntierPositif {
   return typeof valeur === 'number' && Number.isSafeInteger(valeur) && valeur >= 0;
 }
 
-export function estEntierStrictementPositif(valeur: unknown): valeur is number {
+export function estEntierStrictementPositif(valeur: unknown): valeur is EntierStrictementPositif {
   return estEntierPositif(valeur) && valeur > 0;
 }
 

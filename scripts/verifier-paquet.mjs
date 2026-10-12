@@ -284,7 +284,7 @@ const ATTENDUS = {
       'cueillirDansArbre',
       'cueillirSous',
     ],
-    types: ['Retenir'],
+    types: ['EntierPositif', 'EntierStrictementPositif', 'Retenir'],
   },
 };
 const OUTILS = {
@@ -327,44 +327,52 @@ assert.deepEqual(
   'chaque entrée du paquet doit être vérifiée ici',
 );
 
+function verifierLesValeurs(
+  ici,
+  module,
+  { fonctions = [], listes = [], objets = [], constantes = [], chaines = [], erreurs = [] },
+) {
+  for (const fonction of fonctions) {
+    assert.equal(typeof module[fonction], 'function', `${ici} : ${fonction}`);
+  }
+  for (const liste of listes) {
+    assert.ok(
+      Array.isArray(module[liste]) && Object.isFrozen(module[liste]),
+      `${ici} : ${liste} doit être une liste gelée`,
+    );
+  }
+  for (const objet of objets) {
+    assert.ok(
+      typeof module[objet] === 'object' &&
+        !Array.isArray(module[objet]) &&
+        Object.isFrozen(module[objet]),
+      `${ici} : ${objet} doit être un objet gelé`,
+    );
+  }
+  for (const constante of constantes) {
+    assert.equal(typeof module[constante], 'number', `${ici} : ${constante}`);
+  }
+  for (const chaine of chaines) {
+    assert.equal(typeof module[chaine], 'string', `${ici} : ${chaine}`);
+  }
+  for (const erreur of erreurs) {
+    assert.ok(
+      typeof module[erreur] === 'function' && module[erreur].prototype instanceof Error,
+      `${ici} : ${erreur} doit être une classe d erreur`,
+    );
+  }
+}
+
 for (const [entree, attendus] of Object.entries(ATTENDUS)) {
-  const { fonctions = [], listes = [], objets = [], constantes = [], erreurs = [] } = attendus;
   const specificateur = `${manifeste.name}/${entree}`;
   const chargements = { import: await import(specificateur), require: exiger(specificateur) };
   for (const [condition, module] of Object.entries(chargements)) {
-    const ici = `${specificateur} (${condition})`;
-    for (const fonction of fonctions) {
-      assert.equal(typeof module[fonction], 'function', `${ici} : ${fonction}`);
-    }
-    for (const liste of listes) {
-      assert.ok(
-        Array.isArray(module[liste]) && Object.isFrozen(module[liste]),
-        `${ici} : ${liste} doit être une liste gelée`,
-      );
-    }
-    for (const objet of objets) {
-      assert.ok(
-        typeof module[objet] === 'object' &&
-          !Array.isArray(module[objet]) &&
-          Object.isFrozen(module[objet]),
-        `${ici} : ${objet} doit être un objet gelé`,
-      );
-    }
-    for (const constante of constantes) {
-      assert.equal(typeof module[constante], 'number', `${ici} : ${constante}`);
-    }
-    for (const erreur of erreurs) {
-      assert.ok(
-        typeof module[erreur] === 'function' && module[erreur].prototype instanceof Error,
-        `${ici} : ${erreur} doit être une classe d erreur`,
-      );
-    }
+    verifierLesValeurs(`${specificateur} (${condition})`, module, attendus);
   }
 }
 
 for (const [entree, attendus] of Object.entries(OUTILS)) {
   const { types: _typesSansValeur, ...valeurs } = attendus;
-  const { fonctions = [], chaines = [] } = valeurs;
   const specificateur = `${manifeste.name}/${entree}`;
   const module = await import(specificateur);
   assert.deepEqual(
@@ -372,12 +380,7 @@ for (const [entree, attendus] of Object.entries(OUTILS)) {
     nomsAttendus(valeurs).sort(),
     `${specificateur} : chaque export doit figurer dans OUTILS, et lui seul`,
   );
-  for (const fonction of fonctions) {
-    assert.equal(typeof module[fonction], 'function', `${specificateur} : ${fonction}`);
-  }
-  for (const chaine of chaines) {
-    assert.equal(typeof module[chaine], 'string', `${specificateur} : ${chaine}`);
-  }
+  verifierLesValeurs(specificateur, module, valeurs);
 }
 
 function exportsDeclares(fichier) {
@@ -396,23 +399,22 @@ function exportsDeclares(fichier) {
     .sort();
 }
 
-for (const [entree, attendus] of Object.entries(ATTENDUS)) {
-  assert.deepEqual(
-    exportsDeclares(`dist/esm/${entree}.d.ts`),
-    nomsAttendus(attendus).sort(),
-    `${entree} : chaque export déclaré doit figurer dans ATTENDUS, et lui seul`,
-  );
+const DECLARATIONS = {
+  ATTENDUS: { entrees: ATTENDUS, fichier: (entree) => `dist/esm/${entree}.d.ts` },
+  OUTILS: { entrees: OUTILS, fichier: (entree) => `dist/${entree}.d.mts` },
+};
+
+for (const [liste, { entrees, fichier }] of Object.entries(DECLARATIONS)) {
+  for (const [entree, attendus] of Object.entries(entrees)) {
+    assert.deepEqual(
+      exportsDeclares(fichier(entree)),
+      nomsAttendus(attendus).sort(),
+      `${entree} : chaque export déclaré doit figurer dans ${liste}, et lui seul`,
+    );
+  }
 }
 
-for (const [entree, attendus] of Object.entries(OUTILS)) {
-  assert.deepEqual(
-    exportsDeclares(`dist/${entree}.d.mts`),
-    nomsAttendus(attendus).sort(),
-    `${entree} : chaque export déclaré doit figurer dans OUTILS, et lui seul`,
-  );
-}
-
-function sonder(dossier, { fichier, entrees, resolutions }) {
+function sonder(dossier, { fichier, entrees }) {
   const sonde = join(dossier, fichier);
   const reexportations = Object.entries(entrees).map(
     ([entree, attendus]) =>
@@ -424,7 +426,7 @@ function sonder(dossier, { fichier, entrees, resolutions }) {
     getCurrentDirectory: () => dossier,
     getNewLine: () => '\n',
   };
-  for (const resolution of resolutions) {
+  for (const resolution of Object.keys(RESOLUTIONS)) {
     const programme = ts.createProgram([sonde], {
       ...RESOLUTIONS[resolution],
       strict: true,
@@ -442,18 +444,12 @@ function sonder(dossier, { fichier, entrees, resolutions }) {
   }
 }
 
-const RESOLUTIONS_ESM = ['nodenext', 'bundler'];
-
 const dossier = mkdtempSync(join(tmpdir(), 'sonde-partage-'));
 try {
   mkdirSync(join(dossier, 'node_modules'));
   symlinkSync(process.cwd(), join(dossier, 'node_modules', manifeste.name), 'dir');
-  sonder(dossier, {
-    fichier: 'sonde.ts',
-    entrees: ATTENDUS,
-    resolutions: Object.keys(RESOLUTIONS),
-  });
-  sonder(dossier, { fichier: 'sonde-outils.mts', entrees: OUTILS, resolutions: RESOLUTIONS_ESM });
+  sonder(dossier, { fichier: 'sonde.ts', entrees: ATTENDUS });
+  sonder(dossier, { fichier: 'sonde-outils.mts', entrees: OUTILS });
 } finally {
   rmSync(dossier, { recursive: true, force: true });
 }
@@ -492,5 +488,5 @@ assert.deepEqual(
 );
 
 console.log(
-  `${manifeste.name} : entrées ESM et CJS résolues par leur nom de paquet, outils ESM chargés, exports déclarés égaux à ATTENDUS et OUTILS, déclarations lues en ${Object.keys(RESOLUTIONS).join(', ')} (outils en ${RESOLUTIONS_ESM.join(', ')}), archive de ${livres.size} fichiers livrant bin et entrées`,
+  `${manifeste.name} : entrées ESM et CJS résolues par leur nom de paquet, outils ESM chargés, exports déclarés égaux à ATTENDUS et OUTILS, déclarations des entrées et des outils lues en ${Object.keys(RESOLUTIONS).join(', ')}, archive de ${livres.size} fichiers livrant bin et entrées`,
 );

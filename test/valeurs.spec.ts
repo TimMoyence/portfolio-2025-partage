@@ -69,6 +69,14 @@ describe('estEntierPositif', () => {
   ])('refuse %o', (valeur) => {
     expect(estEntierPositif(valeur)).toBe(false);
   });
+
+  it('garde le type number dans la branche fausse', () => {
+    const lire = (valeur: number): boolean => {
+      if (!estEntierPositif(valeur)) expectTypeOf(valeur).toEqualTypeOf<number>();
+      return estEntierPositif(valeur);
+    };
+    expect(lire(1.5)).toBe(false);
+  });
 });
 
 describe('estEntierStrictementPositif', () => {
@@ -91,9 +99,17 @@ describe('estEntierStrictementPositif', () => {
     expect(estEntierStrictementPositif(valeur)).toBe(false);
   });
 
-  it('restreint une valeur inconnue au type number', () => {
+  it('restreint une valeur inconnue a un entier utilisable comme number', () => {
     const valeur: unknown = 3;
-    if (estEntierStrictementPositif(valeur)) expectTypeOf(valeur).toEqualTypeOf<number>();
+    if (estEntierStrictementPositif(valeur)) expectTypeOf(valeur).toExtend<number>();
+  });
+
+  it('garde le type number dans la branche fausse', () => {
+    const lire = (valeur: number): boolean => {
+      if (!estEntierStrictementPositif(valeur)) expectTypeOf(valeur).toEqualTypeOf<number>();
+      return estEntierStrictementPositif(valeur);
+    };
+    expect(lire(0)).toBe(false);
   });
 });
 

@@ -40,6 +40,29 @@ describe('outils — dossier temporaire', () => {
     expect(existsSync(planté)).toBe(false);
   });
 
+  it('attend la fin d un exécutant asynchrone avant de supprimer le dossier', async () => {
+    let planté = '';
+    const vuAprèsAttente = await avecDossierPlante('outils-', { 'a.txt': 'x' }, async (racine) => {
+      planté = racine;
+      await new Promise((suite) => setTimeout(suite, 0));
+      return existsSync(join(racine, 'a.txt'));
+    });
+    expect(vuAprèsAttente).toBe(true);
+    expect(existsSync(planté)).toBe(false);
+  });
+
+  it('supprime le dossier quand l exécutant asynchrone rejette', async () => {
+    let planté = '';
+    await expect(
+      avecDossierPlante('outils-', {}, async (racine) => {
+        planté = racine;
+        await new Promise((suite) => setTimeout(suite, 0));
+        throw new Error('échec voulu');
+      }),
+    ).rejects.toThrow('échec voulu');
+    expect(existsSync(planté)).toBe(false);
+  });
+
   it('planterDossier laisse le dossier à son appelant, supprimerDossier le retire', () => {
     const racine = planterDossier('outils-', { 'x.json': '{}' });
     expect(readFileSync(join(racine, 'x.json'), 'utf8')).toBe('{}');
@@ -71,6 +94,24 @@ describe('outils — racine du dépôt', () => {
     avecDossierPlante('outils-depot-', plantes, (racine) => {
       const attendu = join(racine, 'dépôt à %20 près');
       expect(racineDuDepot(urlDe(racine, 'dépôt à %20 près/a.mjs'))).toBe(attendu);
+    });
+  });
+
+  it('ne prend pas pour manifeste un dossier nommé package.json', () => {
+    const plantes = {
+      'package.json': '{}',
+      'scripts/package.json/garde.txt': '',
+      'scripts/a.mjs': '',
+    };
+    avecDossierPlante('outils-depot-', plantes, (racine) => {
+      expect(racineDuDepot(urlDe(racine, 'scripts/a.mjs'))).toBe(racine);
+    });
+  });
+
+  it('part du dossier lui-même quand l URL désigne un dossier', () => {
+    const plantes = { 'package.json': '{}', 'sous/package.json': '{}', 'sous/a.mjs': '' };
+    avecDossierPlante('outils-depot-', plantes, (racine) => {
+      expect(racineDuDepot(new URL('.', urlDe(racine, 'sous/a.mjs')))).toBe(join(racine, 'sous'));
     });
   });
 

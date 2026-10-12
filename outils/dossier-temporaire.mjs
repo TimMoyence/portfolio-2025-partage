@@ -41,9 +41,15 @@ export function planterDossier(prefixe, fichiers = {}) {
  */
 export function avecDossierPlante(prefixe, fichiers, executer) {
   const racine = planterDossier(prefixe, fichiers);
+  const nettoyer = () => supprimerDossier(racine);
+  let resultat;
   try {
-    return executer(racine);
-  } finally {
-    supprimerDossier(racine);
+    resultat = executer(racine);
+  } catch (erreur) {
+    nettoyer();
+    throw erreur;
   }
+  if (resultat instanceof Promise) return /** @type {T} */ (resultat.finally(nettoyer));
+  nettoyer();
+  return resultat;
 }

@@ -120,6 +120,18 @@
       "html": [
         "dist/cjs/html.d.ts"
       ],
+      "outils/depot": [
+        "dist/outils/depot.d.mts"
+      ],
+      "outils/dossier-temporaire": [
+        "dist/outils/dossier-temporaire.d.mts"
+      ],
+      "outils/porte-de-duplication": [
+        "dist/outils/porte-de-duplication.d.mts"
+      ],
+      "outils/workflow-github": [
+        "dist/outils/workflow-github.d.mts"
+      ],
       "score": [
         "dist/cjs/score.d.ts"
       ],
