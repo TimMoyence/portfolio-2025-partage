@@ -1,8 +1,14 @@
 import ts from 'typescript';
 
+import { extensionOf } from './perimetre.mjs';
+
 /** @typedef {{ raw: string, startLine: number, endLine: number, column: number, emptyBlock: boolean }} ExtractedBlock */
 /** @typedef {{ pos: number, end: number }} CommentSpan */
 /** @typedef {{ text: string, getLineAndCharacterOfPosition(pos: number): import('typescript').LineAndCharacter }} LocatedText */
+/** @typedef {{ interpolates: boolean, spans: CommentSpan[] }} StyleScan */
+
+/** @type {Readonly<Record<string, import('typescript').ScriptKind>>} */
+const SCRIPT_KIND_OF = { tsx: ts.ScriptKind.TSX, jsx: ts.ScriptKind.JSX };
 
 /**
  * @param {string} file
@@ -10,7 +16,7 @@ import ts from 'typescript';
  * @returns {import('typescript').SourceFile}
  */
 function createSf(file, text) {
-  const kind = file.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
+  const kind = SCRIPT_KIND_OF[extensionOf(file)] ?? ts.ScriptKind.TS;
   return ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, kind);
 }
 
@@ -70,7 +76,7 @@ function* nodesOf(sf) {
   const pending = [sf];
   for (let node = pending.pop(); node !== undefined; node = pending.pop()) {
     yield node;
-    const children = node.getChildren(sf);
+    const children = node.getChildren(sf).filter((child) => !ts.isJSDoc(child));
     for (let i = children.length - 1; i >= 0; i -= 1) pending.push(children[i]);
   }
 }
@@ -127,21 +133,18 @@ function isContiguous(previous, next) {
  */
 function mergeContiguous(blocks) {
   const ordered = [...blocks].sort((a, b) => a.startLine - b.startLine || a.column - b.column);
-  /** @type {ExtractedBlock[]} */
-  const merged = [];
+  /** @type {{ head: ExtractedBlock, raws: string[] }[]} */
+  const runs = [];
   for (const block of ordered) {
-    const previous = merged.at(-1);
-    if (previous && isContiguous(previous, block)) {
-      merged[merged.length - 1] = {
-        ...previous,
-        raw: `${previous.raw}\n${block.raw}`,
-        endLine: block.endLine,
-      };
+    const run = runs.at(-1);
+    if (run && isContiguous(run.head, block)) {
+      run.raws.push(block.raw);
+      run.head.endLine = block.endLine;
       continue;
     }
-    merged.push(block);
+    runs.push({ head: { ...block }, raws: [block.raw] });
   }
-  return merged;
+  return runs.map(({ head, raws }) => ({ ...head, raw: raws.join('\n') }));
 }
 
 /**
@@ -184,8 +187,9 @@ export function sourceBlocks({ text, file }) {
 }
 
 const QUOTES = new Set(['"', "'"]);
-const CLOSING_OF_URL = new Set([')']);
 const UNQUOTED_URL = /(?<![\w-])url\(\s*(?!["'\s])/iy;
+const CLOSER_OF_INTERPOLATION = '}';
+const CLOSER_OF_URL = ')';
 
 /**
  * @param {string} text
@@ -209,50 +213,6 @@ function afterChar(text, at) {
 
 /**
  * @param {string} text
- * @param {number} from
- * @param {ReadonlySet<string>} closing
- * @returns {number}
- */
-function afterUnescaped(text, from, closing) {
-  for (let i = from; i < text.length; i = afterChar(text, i)) {
-    if (closing.has(text[i])) return i + 1;
-  }
-  return text.length;
-}
-
-/**
- * @param {string} text
- * @param {number} from
- * @param {string} quote
- * @param {boolean} interpolates
- * @returns {number}
- */
-function afterString(text, from, quote, interpolates) {
-  const closers = [quote];
-  let i = from;
-  while (i < text.length && closers.length > 0) {
-    const closer = closers[closers.length - 1];
-    const char = text[i];
-    if (closer === '}') {
-      if (QUOTES.has(char)) closers.push(char);
-      else if (char === '{') closers.push('}');
-      else if (char === '}') closers.pop();
-      i += 1;
-    } else if (char === closer || char === '\n') {
-      closers.pop();
-      i += 1;
-    } else if (interpolates && text.startsWith('#{', i)) {
-      closers.push('}');
-      i += 2;
-    } else {
-      i = afterChar(text, i);
-    }
-  }
-  return Math.min(i, text.length);
-}
-
-/**
- * @param {string} text
  * @param {number} at
  * @returns {number}
  */
@@ -266,13 +226,86 @@ function styleCommentEnd(text, at) {
 /**
  * @param {string} text
  * @param {number} at
- * @param {boolean} interpolates
+ * @param {CommentSpan[]} spans
  * @returns {number}
  */
-function afterNonComment(text, at, interpolates) {
-  if (QUOTES.has(text[at])) return afterString(text, at + 1, text[at], interpolates);
+function afterComment(text, at, spans) {
+  const end = styleCommentEnd(text, at);
+  if (end >= 0) spans.push({ pos: at, end });
+  return end;
+}
+
+/**
+ * @param {string} text
+ * @param {number} at
+ * @returns {number}
+ */
+function afterUnquotedUrlOpening(text, at) {
   UNQUOTED_URL.lastIndex = at;
-  if (UNQUOTED_URL.test(text)) return afterUnescaped(text, UNQUOTED_URL.lastIndex, CLOSING_OF_URL);
+  return UNQUOTED_URL.test(text) ? UNQUOTED_URL.lastIndex : -1;
+}
+
+/**
+ * @param {string} text
+ * @param {number} at
+ * @param {string[]} closers
+ * @param {StyleScan} scan
+ * @returns {number}
+ */
+function stepInInterpolation(text, at, closers, scan) {
+  const commentEnd = afterComment(text, at, scan.spans);
+  if (commentEnd >= 0) return commentEnd;
+  const urlStart = afterUnquotedUrlOpening(text, at);
+  if (urlStart >= 0) {
+    closers.push(CLOSER_OF_URL);
+    return urlStart;
+  }
+  const char = text[at];
+  if (char === CLOSER_OF_INTERPOLATION) closers.pop();
+  else if (char === '{') closers.push(CLOSER_OF_INTERPOLATION);
+  else if (QUOTES.has(char)) closers.push(char);
+  return afterChar(text, at);
+}
+
+/**
+ * @param {string} text
+ * @param {number} from
+ * @param {string} closer
+ * @param {StyleScan} scan
+ * @returns {number}
+ */
+function afterNested(text, from, closer, scan) {
+  const closers = [closer];
+  let i = from;
+  while (closers.length > 0 && i < text.length) {
+    const current = closers[closers.length - 1];
+    if (current === CLOSER_OF_INTERPOLATION) {
+      i = stepInInterpolation(text, i, closers, scan);
+    } else if (QUOTES.has(current) && text[i] === '\n') {
+      return i;
+    } else if (text[i] === current) {
+      closers.pop();
+      i += 1;
+    } else if (scan.interpolates && text.startsWith('#{', i)) {
+      closers.push(CLOSER_OF_INTERPOLATION);
+      i += 2;
+    } else {
+      i = afterChar(text, i);
+    }
+  }
+  return Math.min(i, text.length);
+}
+
+/**
+ * @param {string} text
+ * @param {number} at
+ * @param {StyleScan} scan
+ * @returns {number}
+ */
+function afterNonComment(text, at, scan) {
+  if (QUOTES.has(text[at])) return afterNested(text, at + 1, text[at], scan);
+  const urlStart = afterUnquotedUrlOpening(text, at);
+  if (urlStart >= 0) return afterNested(text, urlStart, CLOSER_OF_URL, scan);
   return afterChar(text, at);
 }
 
@@ -282,19 +315,14 @@ function afterNonComment(text, at, interpolates) {
  * @returns {CommentSpan[]}
  */
 function styleCommentSpans(text, interpolates) {
-  /** @type {CommentSpan[]} */
-  const spans = [];
+  /** @type {StyleScan} */
+  const scan = { interpolates, spans: [] };
   let at = 0;
   while (at < text.length) {
-    const end = styleCommentEnd(text, at);
-    if (end < 0) {
-      at = afterNonComment(text, at, interpolates);
-      continue;
-    }
-    spans.push({ pos: at, end });
-    at = end;
+    const end = afterComment(text, at, scan.spans);
+    at = end < 0 ? afterNonComment(text, at, scan) : end;
   }
-  return spans;
+  return scan.spans;
 }
 
 /**
@@ -315,7 +343,7 @@ function markupCommentSpans(text) {
  * @returns {ExtractedBlock[]}
  */
 export function styleBlocks({ text, file }) {
-  return mergeContiguous(blocksAt(text, styleCommentSpans(text, file.endsWith('.scss'))));
+  return mergeContiguous(blocksAt(text, styleCommentSpans(text, extensionOf(file) === 'scss')));
 }
 
 /**

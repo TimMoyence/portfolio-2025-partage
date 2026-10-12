@@ -21,7 +21,7 @@ const ARTEFACT_SEGMENTS = new Set([
  * @param {string} file
  * @returns {string}
  */
-function extensionOf(file) {
+export function extensionOf(file) {
   const name = file.slice(file.lastIndexOf('/') + 1);
   const dot = name.lastIndexOf('.');
   return dot < 0 ? '' : name.slice(dot + 1).toLowerCase();

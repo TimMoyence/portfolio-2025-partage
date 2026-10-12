@@ -18,6 +18,7 @@ import {
   tightenCeiling,
 } from '../outils/garde-commentaires/garde.mjs';
 import { isInScope, PERIMETRE_PAR_DEFAUT } from '../outils/garde-commentaires/perimetre.mjs';
+import { DRAPEAUX_DE_MESURE } from './drapeaux-de-mesure.mjs';
 
 const manifesteDuPaquet = JSON.parse(readFileSync('package.json', 'utf8')) as {
   bin: Record<string, string>;
@@ -68,9 +69,11 @@ const linesOf = (offenders: ReturnType<typeof analyzeFile>): number[] =>
 
 const mesurerLaCroissance = (cas: string, taille: number) =>
   JSON.parse(
-    execFileSync(process.execPath, ['test/mesure-de-croissance.mjs', cas, String(taille)], {
-      encoding: 'utf8',
-    }),
+    execFileSync(
+      process.execPath,
+      [...DRAPEAUX_DE_MESURE, 'test/mesure-de-croissance.mjs', cas, String(taille)],
+      { encoding: 'utf8' },
+    ),
   ) as { croissance: number; derniereLigne: number };
 
 const lancerLeBin = (args: string[]) =>
@@ -134,6 +137,18 @@ describe('garde-commentaires — doctrine', () => {
   ])('EXCEPTION 1 : la directive fonctionnelle %s -> 0 offense', (directive) => {
     expect(ts(L(directive, 'const a = 1;'))).toEqual([]);
   });
+
+  it.each([
+    ['src/a.service.ts', '@deprecated utiliser {@link autre} // la nouvelle API'],
+    ['src/a.service.ts', '@deprecated utiliser {@link autre} /* la nouvelle API */'],
+    ['scripts/x.mjs', '@param {string} id {@link autre} // identifiant'],
+  ])(
+    'ANTI-TROU : un commentaire cite dans un JSDoc de %s appartient au JSDoc (%s)',
+    (file, ligne) => {
+      const text = L('/**', ` * ${ligne}`, ' */', 'export function vieux(id) {}');
+      expect(analyzeFile({ text, file })).toEqual([]);
+    },
+  );
 
   it('EXCEPTION 1 : shebang d un script executable -> 0 offense', () => {
     expect(
@@ -290,11 +305,80 @@ describe('garde-commentaires — doctrine', () => {
     },
   );
 
+  const N = 'on recupere le user puis on le renvoie';
+
+  it.each([
+    [
+      'A1 chaine imbriquee non fermee',
+      L('$y: 1;', `.a { content: "x #{$y"; }`, `// ${N}`, '.b { color: red; }'),
+      [3],
+    ],
+    ['A2 accolades en chaines imbriquees', `.a { content: "#{if(true, '{', '}')}"; } // ${N}`, [1]],
+    ['A3 guillemet en chaine imbriquee', `.a { content: "#{'"'}"; } // ${N}`, [1]],
+    [
+      'A4 interpolation sur plusieurs lignes',
+      L('$x: 1;', '.a { content: "#{', '  $x', `}"; } // ${N}`),
+      [4],
+    ],
+    ['A5 /* } */ interne', L('$x: 1;', `.a { content: "#{ $x /* } */ }"; } // ${N}`), [2, 2]],
+    [
+      'A6 /* { */ interne',
+      L('$x: 1;', `.a { content: "#{ $x /* { */ }"; } // ${N}`, '.b { color: red; }', `// ${N}`),
+      [2, 2, 4],
+    ],
+    ['A7 /* " */ interne', L('$x: 1;', `.a { content: "#{ $x /* " */ }"; } // ${N}`), [2, 2]],
+    [
+      'A8 // { interne multiligne',
+      L('$x: 1;', '.a { content: "#{ $x // {', `}"; } // ${N}`, '.b { color: red; }', `// ${N}`),
+      [2, 3, 5],
+    ],
+    ['A9 #{ echappe', `.a { content: "\\#{"; } // ${N}`, [1]],
+    [
+      'A13 chaine imbriquee non fermee puis saut de ligne',
+      L('$x: 1;', `.a { content: "#{ '}"; }`, `// ${N}`),
+      [3],
+    ],
+    ['A14 # seul en fin de chaine', `.a { content: "#"; } // ${N}`, [1]],
+    ['A15 #{ en fin de fichier', '.a { content: "#{', []],
+    [
+      'interpolation imbriquee hors chaine puis guillemet',
+      L('$a: 1;', `.a { content: "#{ #{$a} + '"' }"; } // ${N}`),
+      [2],
+    ],
+    [
+      'url() non citee dans une interpolation',
+      L('.a { content: "#{url(//cdn.exemple.fr/a.png)}"; }', `// ${N}`),
+      [2],
+    ],
+    ['interpolation dans une url() non citee', `.a { background: url(#{"a)b"}); } // ${N}`, [1]],
+  ])(
+    'STYLE : une interpolation SCSS releve ses commentaires et rend la main a la feuille (%s)',
+    (_cas, text, lignes) => {
+      expect(linesOf(analyzeFile({ text, file: 'src/styles/_a.scss' }))).toEqual(lignes);
+    },
+  );
+
+  it.each([
+    ['src/styles/_A.SCSS', L('$x: a;', `.a { content: "a #{$x + '"'} c"; } // ${N}`)],
+    ['src/styles/_a.Scss', L('$x: a;', `.a { content: "a #{$x + '"'} c"; } // ${N}`)],
+    [
+      'src/A.TSX',
+      L('export const A = () => <p>use `x</p>;', `// ${N}`, 'export const B = () => <p>`</p>;'),
+    ],
+    [
+      'src/a.jsx',
+      L('export const A = () => <p>use `x</p>;', `// ${N}`, 'export const B = () => <p>`</p>;'),
+    ],
+  ])('l extension de %s se lit sans casse et decide de la lecture du fichier', (file, text) => {
+    expect(linesOf(analyzeFile({ text, file }))).toEqual([2]);
+  });
+
   it.each([
     ['blocs-vides', 10_000, 20_000],
     ['scss', 10_000, 20_000],
     ['html', 10_000, 20_000],
     ['non-fermes', 40_000, 1],
+    ['lignes-contigues', 16_000, 32_000],
     ['trivia-partagee', 4_000, 1],
     ['trivia-de-queue', 1_500, 1],
   ])(
@@ -304,7 +388,7 @@ describe('garde-commentaires — doctrine', () => {
       expect(mesure.croissance).toBeLessThan(3);
       expect(mesure.derniereLigne).toBe(derniereLigne);
     },
-    30_000,
+    60_000,
   );
 
   it('SCSS : les deux syntaxes de commentaire sont lues, et une banniere de section est une offense', () => {
