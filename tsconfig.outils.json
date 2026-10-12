@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "outils",
+    "outDir": "dist/outils",
+    "declaration": true,
+    "emitDeclarationOnly": true
+  },
+  "include": ["outils/*.mjs"]
+}

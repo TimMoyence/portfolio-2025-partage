@@ -91,34 +91,37 @@ export function escapeHtml(value: unknown): EscapedHtml {
     .replaceAll("'", '&#39;') as EscapedHtml;
 }
 
-const ALLOWED_URL_SCHEMES: ReadonlySet<string> = new Set(['http:', 'https:', 'mailto:']);
+const ALLOWED_URL_SCHEMES: ReadonlySet<string> = new Set(['http', 'https', 'mailto']);
 
 const INERT_URL = '#';
 
-function absoluteScheme(raw: string): string | null {
-  try {
-    return new URL(raw).protocol;
-  } catch {
-    return null;
-  }
-}
+const C0_OU_ESPACE_EN_TETE = /^[\u0000- ]+/;
+const TABULATION_OU_SAUT_DE_LIGNE = /[\t\n\r]/g;
+const SCHEMA_EN_TETE = /^([a-z][a-z\d+.-]*):/i;
 
 /**
- * Le parseur de https://url.spec.whatwg.org/#concept-basic-url-parser retire
- * les tabulations et sauts de ligne de l'entree et met le schema en
- * minuscules : `new URL` ramene `JaVaScRiPt:`, `java<TAB>script:` et
- * ` javascript:` au meme `protocol`, sans normalisation maison. Une entree
- * sans schema valide fait lever le parseur : c'est une reference relative,
- * qui heritera du schema du document.
+ * Lecture du schema selon https://url.spec.whatwg.org/#concept-basic-url-parser :
+ * le parseur retire les C0 et espaces de tete, toutes les tabulations et tous
+ * les sauts de ligne, puis lit le schema (scheme start state) : une lettre
+ * ASCII suivie de lettres, chiffres, `+`, `-` ou `.`, jusqu'au deux-points,
+ * casse ignoree. Le schema est lu avant toute analyse de l'hote : une URL dont
+ * l'hote ou le port est invalide (`javascript://[`) garde son schema, alors que
+ * `new URL` leve. Une entree sans ce prefixe est une reference relative, qui
+ * heritera du schema du document.
  *
  * Le refus rend `#` et non la chaine vide : par RFC 3986 section 4.2, une
  * reference vide designe le document courant, donc `href=""` reste un lien
  * actif.
  */
+function schemaLisible(raw: string): string | null {
+  const entree = raw.replace(C0_OU_ESPACE_EN_TETE, '').replace(TABULATION_OU_SAUT_DE_LIGNE, '');
+  return SCHEMA_EN_TETE.exec(entree)?.[1]?.toLowerCase() ?? null;
+}
+
 export function estUrlAutorisee(value: unknown): boolean {
   const raw = String(value);
   if (!raw.trim()) return false;
-  const scheme = absoluteScheme(raw);
+  const scheme = schemaLisible(raw);
   return scheme === null || ALLOWED_URL_SCHEMES.has(scheme);
 }
 

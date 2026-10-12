@@ -1,7 +1,9 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
+import { racineDuDepot } from '../outils/depot.mjs';
 import {
   avecDossierPlante,
   planterDossier,
@@ -43,6 +45,41 @@ describe('outils — dossier temporaire', () => {
     expect(readFileSync(join(racine, 'x.json'), 'utf8')).toBe('{}');
     supprimerDossier(racine);
     expect(existsSync(racine)).toBe(false);
+  });
+});
+
+describe('outils — racine du dépôt', () => {
+  const urlDe = (racine: string, relatif: string): string =>
+    pathToFileURL(join(racine, relatif)).href;
+
+  it('rend le dossier du package.json le plus proche au-dessus du module appelant', () => {
+    const plantes = { 'package.json': '{}', 'scripts/lib/a.mjs': '' };
+    avecDossierPlante('outils-depot-', plantes, (racine) => {
+      expect(racineDuDepot(urlDe(racine, 'scripts/lib/a.mjs'))).toBe(racine);
+    });
+  });
+
+  it('s arrête au package.json le plus proche, pas à celui du dépôt englobant', () => {
+    const plantes = { 'package.json': '{}', 'sous/package.json': '{}', 'sous/a.mjs': '' };
+    avecDossierPlante('outils-depot-', plantes, (racine) => {
+      expect(racineDuDepot(urlDe(racine, 'sous/a.mjs'))).toBe(join(racine, 'sous'));
+    });
+  });
+
+  it('décode le chemin de l URL : espaces, accents et %20 littéral', () => {
+    const plantes = { 'dépôt à %20 près/package.json': '{}', 'dépôt à %20 près/a.mjs': '' };
+    avecDossierPlante('outils-depot-', plantes, (racine) => {
+      const attendu = join(racine, 'dépôt à %20 près');
+      expect(racineDuDepot(urlDe(racine, 'dépôt à %20 près/a.mjs'))).toBe(attendu);
+    });
+  });
+
+  it('refuse un module qu aucun package.json ne surplombe, en nommant son dossier', () => {
+    avecDossierPlante('outils-depot-', { 'a.mjs': '' }, (racine) => {
+      expect(() => racineDuDepot(urlDe(racine, 'a.mjs'))).toThrow(
+        `racineDuDepot : aucun package.json dans ${racine} ni au-dessus`,
+      );
+    });
   });
 });
 

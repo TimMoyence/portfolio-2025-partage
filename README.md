@@ -21,7 +21,7 @@ chaque action n'existe qu'à un seul endroit, et les deux dépôts l'importent d
 - `portfolio-2025-partage/score` : le statut d'un score sur 100 (`ok`, `warning`, `critical`)
   et son libellé (`LIBELLES_DU_STATUT`) ;
 - `portfolio-2025-partage/valeurs` : les gardes et utilitaires de valeurs (`estObjet`,
-  `estMembre`, `estEntierPositif`, `borner`, `messageDErreur`, `echapperPourRegex`, `sansBords`,
+  `estMembre`, `estEntierPositif`, `estEntierStrictementPositif`, `borner`, `messageDErreur`, `echapperPourRegex`, `sansBords`,
   `cueillirDansArbre`…).
 
 ## Outils de développement (ESM, Node)
@@ -38,6 +38,12 @@ chaque action n'existe qu'à un seul endroit, et les deux dépôts l'importent d
   `garde-commentaires --root .` joue la garde, `--count` affiche le compte, `--tighten`
   abaisse le plafond au compte mesuré. Elle exige `typescript` (dépendance pair optionnelle).
 
+Chaque outil est un module ESM livré avec ses déclarations (`dist/outils/*.d.mts`, condition
+`types` de l'export `import`) :
+
+- `portfolio-2025-partage/outils/depot` : `racineDuDepot(import.meta.url)` rend le dossier du
+  `package.json` le plus proche au-dessus du script appelant, chemin décodé, et lève s'il n'y en
+  a aucun ;
 - `portfolio-2025-partage/outils/dossier-temporaire` : planter un dépôt jetable pour un test de
   script (`avecDossierPlante`, `planterDossier`, `ecrireFichiers`, `supprimerDossier`) ;
 - `portfolio-2025-partage/outils/porte-de-duplication` : les scénarios canaris des portes jscpd

@@ -1,16 +1,19 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 import {
+  BOITES_DE_REVISION,
   CHAMPS_EXTRAITS_DU_CAS,
   DIFFUSIONS,
   ETATS_PULSE,
   MODALITES,
   PACING_MODES,
   PHASES_DE_VOTE,
+  RAISONS_DE_FIN,
   REGIMES_DE_VERROU,
   STATUTS_DE_REPONSE_LIBRE,
   STATUTS_DE_SEANCE,
   TYPES_QUESTION,
   surLaJumelle,
+  type BoiteDeRevision,
   type CadrageDuRenvoi,
   type ChampExtraitDuCas,
   type ContenuDeBrique,
@@ -33,6 +36,7 @@ import {
   type Modalite,
   type PacingMode,
   type ProgressionDesEnigmes,
+  type RaisonDeFin,
   type RapportSeance,
   type RegimeVerrou,
   type RegleDeNotation,
@@ -50,7 +54,9 @@ import {
 } from '../src/contrats';
 import type { Feuille } from '../src/formule';
 
-const LISTES_FERMEES: readonly (readonly [string, readonly string[], readonly string[]])[] = [
+type ListeFermee = readonly (string | number)[];
+
+const LISTES_FERMEES: readonly (readonly [string, ListeFermee, ListeFermee])[] = [
   [
     'TYPES_QUESTION',
     TYPES_QUESTION,
@@ -69,6 +75,8 @@ const LISTES_FERMEES: readonly (readonly [string, readonly string[], readonly st
   ],
   ['STATUTS_DE_SEANCE', STATUTS_DE_SEANCE, ['attente', 'en_cours', 'terminee']],
   ['STATUTS_DE_REPONSE_LIBRE', STATUTS_DE_REPONSE_LIBRE, ['enregistre', 'en_attente', 'echec']],
+  ['RAISONS_DE_FIN', RAISONS_DE_FIN, ['cloturee', 'introuvable', 'expiree', 'evince', 'revoque']],
+  ['BOITES_DE_REVISION', BOITES_DE_REVISION, [1, 2, 3]],
 ];
 
 describe('contrats — listes fermées servies par l API', () => {
@@ -93,6 +101,10 @@ describe('contrats — listes fermées servies par l API', () => {
     expectTypeOf<PacingMode>().toEqualTypeOf<'pilote' | 'libre'>();
     expectTypeOf<Modalite>().toEqualTypeOf<'solo' | 'binome' | 'groupe' | 'classe'>();
     expectTypeOf<RegimeVerrou>().toEqualTypeOf<'ouvert' | 'focus' | 'examen'>();
+    expectTypeOf<RaisonDeFin>().toEqualTypeOf<
+      'cloturee' | 'introuvable' | 'expiree' | 'evince' | 'revoque'
+    >();
+    expectTypeOf<BoiteDeRevision>().toEqualTypeOf<1 | 2 | 3>();
   });
 });
 
@@ -212,6 +224,7 @@ describe('contrats — séance', () => {
 
   it('le fil sérialise les dates en chaînes', () => {
     expectTypeOf<RapportSeance['ouverteLe']>().toEqualTypeOf<string>();
+    expectTypeOf<EtatSession['majLe']>().toEqualTypeOf<string>();
     expectTypeOf<ReponseLibreFormateur['submittedAt']>().toEqualTypeOf<string>();
     expectTypeOf<ReponseLibreFormateur['strategiesServiesLe']>().toEqualTypeOf<string | null>();
   });

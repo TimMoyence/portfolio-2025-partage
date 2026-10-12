@@ -45,7 +45,17 @@ export interface EtatSession {
   readonly participants: number;
   readonly revision: number;
   readonly pilotage: Readonly<Record<string, PilotageEcran>>;
+  readonly majLe: string;
 }
+
+export const RAISONS_DE_FIN = Object.freeze([
+  'cloturee',
+  'introuvable',
+  'expiree',
+  'evince',
+  'revoque',
+] as const);
+export type RaisonDeFin = (typeof RAISONS_DE_FIN)[number];
 
 export interface SeanceOuverte {
   readonly sessionId: string;

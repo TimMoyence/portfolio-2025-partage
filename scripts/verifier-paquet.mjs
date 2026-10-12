@@ -89,6 +89,8 @@ const ATTENDUS = {
       'CHAMPS_EXTRAITS_DU_CAS',
       'STATUTS_DE_SEANCE',
       'STATUTS_DE_REPONSE_LIBRE',
+      'RAISONS_DE_FIN',
+      'BOITES_DE_REVISION',
     ],
     types: [
       'TypeQuestion',
@@ -180,6 +182,7 @@ const ATTENDUS = {
       'DerouleCours',
       'LivretPublie',
       'StatutDeSeance',
+      'RaisonDeFin',
       'PilotageEcran',
       'PilotageDemande',
       'CommandePilotage',
@@ -271,6 +274,7 @@ const ATTENDUS = {
       'objetOuNull',
       'estMembre',
       'estEntierPositif',
+      'estEntierStrictementPositif',
       'borner',
       'messageDErreur',
       'echapperPourRegex',
@@ -284,19 +288,21 @@ const ATTENDUS = {
   },
 };
 const OUTILS = {
-  'outils/dossier-temporaire': [
-    'avecDossierPlante',
-    'planterDossier',
-    'ecrireFichiers',
-    'supprimerDossier',
-  ],
-  'outils/porte-de-duplication': [
-    'verdictSurDepotPlante',
-    'scenariosDeLaPorte',
-    'ecartsDesConfigurations',
-    'ecartsDuBranchement',
-  ],
-  'outils/workflow-github': ['blocsDesJobs', 'etapesDuJob'],
+  'outils/depot': { fonctions: ['racineDuDepot'] },
+  'outils/dossier-temporaire': {
+    fonctions: ['avecDossierPlante', 'planterDossier', 'ecrireFichiers', 'supprimerDossier'],
+  },
+  'outils/porte-de-duplication': {
+    fonctions: [
+      'verdictSurDepotPlante',
+      'scenariosDeLaPorte',
+      'ecartsDesConfigurations',
+      'ecartsDuBranchement',
+    ],
+    chaines: ['CANARI_TS'],
+    types: ['Moteur', 'Porte', 'Verdict', 'DemandeDeVerdict', 'CasDePorte', 'Scenario'],
+  },
+  'outils/workflow-github': { fonctions: ['blocsDesJobs', 'etapesDuJob'] },
 };
 
 const RESOLUTIONS = {
@@ -310,9 +316,10 @@ const nomsAttendus = ({
   listes = [],
   objets = [],
   constantes = [],
+  chaines = [],
   erreurs = [],
   types = [],
-}) => [...fonctions, ...listes, ...objets, ...constantes, ...erreurs, ...types];
+}) => [...fonctions, ...listes, ...objets, ...constantes, ...chaines, ...erreurs, ...types];
 
 assert.deepEqual(
   Object.keys(manifeste.exports).sort(),
@@ -355,11 +362,21 @@ for (const [entree, attendus] of Object.entries(ATTENDUS)) {
   }
 }
 
-for (const [entree, fonctions] of Object.entries(OUTILS)) {
+for (const [entree, attendus] of Object.entries(OUTILS)) {
+  const { types: _typesSansValeur, ...valeurs } = attendus;
+  const { fonctions = [], chaines = [] } = valeurs;
   const specificateur = `${manifeste.name}/${entree}`;
   const module = await import(specificateur);
+  assert.deepEqual(
+    Object.keys(module).sort(),
+    nomsAttendus(valeurs).sort(),
+    `${specificateur} : chaque export doit figurer dans OUTILS, et lui seul`,
+  );
   for (const fonction of fonctions) {
     assert.equal(typeof module[fonction], 'function', `${specificateur} : ${fonction}`);
+  }
+  for (const chaine of chaines) {
+    assert.equal(typeof module[chaine], 'string', `${specificateur} : ${chaine}`);
   }
 }
 
@@ -387,21 +404,29 @@ for (const [entree, attendus] of Object.entries(ATTENDUS)) {
   );
 }
 
-function sonder(dossier) {
-  const sonde = join(dossier, 'sonde.ts');
-  const reexportations = Object.entries(ATTENDUS).map(
+for (const [entree, attendus] of Object.entries(OUTILS)) {
+  assert.deepEqual(
+    exportsDeclares(`dist/${entree}.d.mts`),
+    nomsAttendus(attendus).sort(),
+    `${entree} : chaque export déclaré doit figurer dans OUTILS, et lui seul`,
+  );
+}
+
+function sonder(dossier, { fichier, entrees, resolutions }) {
+  const sonde = join(dossier, fichier);
+  const reexportations = Object.entries(entrees).map(
     ([entree, attendus]) =>
       `export type { ${nomsAttendus(attendus).join(', ')} } from '${manifeste.name}/${entree}';`,
   );
   writeFileSync(sonde, `${reexportations.join('\n')}\n`);
   const hote = {
-    getCanonicalFileName: (fichier) => fichier,
+    getCanonicalFileName: (chemin) => chemin,
     getCurrentDirectory: () => dossier,
     getNewLine: () => '\n',
   };
-  for (const [resolution, options] of Object.entries(RESOLUTIONS)) {
+  for (const resolution of resolutions) {
     const programme = ts.createProgram([sonde], {
-      ...options,
+      ...RESOLUTIONS[resolution],
       strict: true,
       noEmit: true,
       target: ts.ScriptTarget.ES2022,
@@ -412,16 +437,23 @@ function sonder(dossier) {
     assert.equal(
       diagnostics.length,
       0,
-      `déclarations lues en ${resolution} :\n${ts.formatDiagnostics(diagnostics, hote)}`,
+      `${fichier} : déclarations lues en ${resolution} :\n${ts.formatDiagnostics(diagnostics, hote)}`,
     );
   }
 }
+
+const RESOLUTIONS_ESM = ['nodenext', 'bundler'];
 
 const dossier = mkdtempSync(join(tmpdir(), 'sonde-partage-'));
 try {
   mkdirSync(join(dossier, 'node_modules'));
   symlinkSync(process.cwd(), join(dossier, 'node_modules', manifeste.name), 'dir');
-  sonder(dossier);
+  sonder(dossier, {
+    fichier: 'sonde.ts',
+    entrees: ATTENDUS,
+    resolutions: Object.keys(RESOLUTIONS),
+  });
+  sonder(dossier, { fichier: 'sonde-outils.mts', entrees: OUTILS, resolutions: RESOLUTIONS_ESM });
 } finally {
   rmSync(dossier, { recursive: true, force: true });
 }
@@ -447,11 +479,18 @@ for (const bin of Object.values(manifeste.bin)) {
     `${bin} doit s exécuter par node`,
   );
 }
-assert.ok(
-  [...livres].every((chemin) => !chemin.startsWith('test/') && !chemin.startsWith('src/')),
-  'l archive ne livre ni les tests ni les sources',
+const FICHIER_DE_TEST = /(^|\/)[^/]+\.(spec|test)\.[^/]+$/;
+const TOUJOURS_LIVRES = new Set(['package.json', 'README.md']);
+const estLivrable = (chemin) =>
+  !FICHIER_DE_TEST.test(chemin) &&
+  (TOUJOURS_LIVRES.has(chemin) ||
+    manifeste.files.some((dossier) => chemin.startsWith(`${dossier}/`)));
+assert.deepEqual(
+  [...livres].filter((chemin) => !estLivrable(chemin)),
+  [],
+  `l archive ne livre que ${manifeste.files.join('/, ')}/, package.json et README.md, sans aucun fichier de test`,
 );
 
 console.log(
-  `${manifeste.name} : entrées ESM et CJS résolues par leur nom de paquet, outils ESM chargés, exports déclarés égaux à ATTENDUS, déclarations lues en ${Object.keys(RESOLUTIONS).join(', ')}, archive de ${livres.size} fichiers livrant bin et entrées`,
+  `${manifeste.name} : entrées ESM et CJS résolues par leur nom de paquet, outils ESM chargés, exports déclarés égaux à ATTENDUS et OUTILS, déclarations lues en ${Object.keys(RESOLUTIONS).join(', ')} (outils en ${RESOLUTIONS_ESM.join(', ')}), archive de ${livres.size} fichiers livrant bin et entrées`,
 );

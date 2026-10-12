@@ -6,6 +6,7 @@ import {
   cueillirSous,
   echapperPourRegex,
   estEntierPositif,
+  estEntierStrictementPositif,
   estMembre,
   estObjet,
   messageDErreur,
@@ -67,6 +68,32 @@ describe('estEntierPositif', () => {
     [null],
   ])('refuse %o', (valeur) => {
     expect(estEntierPositif(valeur)).toBe(false);
+  });
+});
+
+describe('estEntierStrictementPositif', () => {
+  it.each([[1], [Number.MAX_SAFE_INTEGER]])('accepte %d', (valeur) => {
+    expect(estEntierStrictementPositif(valeur)).toBe(true);
+  });
+
+  it.each([
+    [0],
+    [-0],
+    [-1],
+    [1.5],
+    [Number.NaN],
+    [Number.POSITIVE_INFINITY],
+    [Number.MAX_SAFE_INTEGER + 1],
+    [1e21],
+    ['1'],
+    [null],
+  ])('refuse %o', (valeur) => {
+    expect(estEntierStrictementPositif(valeur)).toBe(false);
+  });
+
+  it('restreint une valeur inconnue au type number', () => {
+    const valeur: unknown = 3;
+    if (estEntierStrictementPositif(valeur)) expectTypeOf(valeur).toEqualTypeOf<number>();
   });
 });
 

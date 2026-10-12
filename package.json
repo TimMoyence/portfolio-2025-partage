@@ -81,14 +81,29 @@
         "default": "./dist/cjs/valeurs.js"
       }
     },
+    "./outils/depot": {
+      "import": {
+        "types": "./dist/outils/depot.d.mts",
+        "default": "./outils/depot.mjs"
+      }
+    },
     "./outils/dossier-temporaire": {
-      "import": "./outils/dossier-temporaire.mjs"
+      "import": {
+        "types": "./dist/outils/dossier-temporaire.d.mts",
+        "default": "./outils/dossier-temporaire.mjs"
+      }
     },
     "./outils/porte-de-duplication": {
-      "import": "./outils/porte-de-duplication.mjs"
+      "import": {
+        "types": "./dist/outils/porte-de-duplication.d.mts",
+        "default": "./outils/porte-de-duplication.mjs"
+      }
     },
     "./outils/workflow-github": {
-      "import": "./outils/workflow-github.mjs"
+      "import": {
+        "types": "./dist/outils/workflow-github.d.mts",
+        "default": "./outils/workflow-github.mjs"
+      }
     }
   },
   "typesVersions": {

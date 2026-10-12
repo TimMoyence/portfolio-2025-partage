@@ -121,6 +121,29 @@ describe('estUrlAutorisee', () => {
   ])('refuse %j', (url) => {
     expect(estUrlAutorisee(url)).toBe(false);
   });
+
+  it.each([
+    'javascript://[%0aalert(1)',
+    'javascript://a b%0aalert(1)',
+    'javascript://example.com:99999/%0aalert(1)',
+    'javascript://x:y@[/%0aalert(1)',
+    'javascript://[::1%0aalert(1)',
+    'JAVASCRIPT://[',
+    'java\tscript://[%0aalert(1)',
+    ' javascript://[%0aalert(1)',
+    'data://[x',
+    'vbscript://[x',
+  ])('refuse un schema dangereux que new URL ne sait pas analyser : %j', (url) => {
+    expect(estUrlAutorisee(url)).toBe(false);
+    expect(String(escapeUrl(url))).toBe('#');
+  });
+
+  it.each(['//cdn.example.com/a.png', 'sprite.svg#icone', '?page=2', './a:b'])(
+    'admet la reference sans schema %j',
+    (url) => {
+      expect(estUrlAutorisee(url)).toBe(true);
+    },
+  );
 });
 
 describe('escapeUrl — etancheite du type', () => {

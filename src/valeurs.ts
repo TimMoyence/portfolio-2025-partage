@@ -14,6 +14,10 @@ export function estEntierPositif(valeur: unknown): valeur is number {
   return typeof valeur === 'number' && Number.isSafeInteger(valeur) && valeur >= 0;
 }
 
+export function estEntierStrictementPositif(valeur: unknown): valeur is number {
+  return estEntierPositif(valeur) && valeur > 0;
+}
+
 export function borner(valeur: number, minimum: number, maximum: number): number {
   return Math.max(minimum, Math.min(maximum, valeur));
 }

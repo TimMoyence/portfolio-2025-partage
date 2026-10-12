@@ -268,7 +268,8 @@ export interface SpacedRappel extends ContenuDeBrique {
   readonly intitule: string;
 }
 
-export type BoiteDeRevision = 1 | 2 | 3;
+export const BOITES_DE_REVISION = Object.freeze([1, 2, 3] as const);
+export type BoiteDeRevision = (typeof BOITES_DE_REVISION)[number];
 
 export interface SpacedQuestionPublique {
   readonly questionId: string;
